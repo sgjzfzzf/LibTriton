@@ -4,6 +4,7 @@
 include "mlir/IR/OpBase.td"
 include "mlir/Dialect/LLVMIR/LLVMOpBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "tvm_ffi_bindings/Dialect/DLPack/IR/DLPackTypes.td"
 include "tvm_ffi_bindings/Dialect/TVMFFI/IR/TVMFFI.td"
 include "tvm_ffi_bindings/Dialect/TVMFFI/IR/TVMFFITypes.td"
 
@@ -68,16 +69,16 @@ def TVMFFI_ToStrOp : TVMFFI_Op<"to_str", [Pure]> {
 def TVMFFI_FromTensorOp : TVMFFI_Op<"from_tensor", [Pure]> {
   let summary = "Box DLTensor into TVMFFIAny";
   let description = [{Converts a DLTensor handle value into TVMFFIAny.}];
-  let arguments = (ins TVMFFI_DLTensor : $input);
+  let arguments = (ins DLPack_DLTensorType : $input);
   let results = (outs TVMFFI_AnyType : $output);
 }
 
 def TVMFFI_ToTensorOp : TVMFFI_Op<"to_tensor", [Pure]> {
   let summary = "Unbox DLTensor from TVMFFIAny";
-  let description = [{Converts a TVMFFIAny value into a TVMFFIDLTensor
+  let description = [{Converts a TVMFFIAny value into a DLPack DLTensor
                           handle.This op is currently a conversion scaffold.}];
   let arguments = (ins TVMFFI_AnyType : $input);
-  let results = (outs TVMFFI_DLTensor : $output);
+  let results = (outs DLPack_DLTensorType : $output);
 }
 
 def TVMFFI_FromObjectOp : TVMFFI_Op<"from_object", [Pure]> {

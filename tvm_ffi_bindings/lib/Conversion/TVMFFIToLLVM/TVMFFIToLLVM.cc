@@ -1,4 +1,4 @@
-// TVMFFIToLLVM.cpp - Pass that lowers TVMFFI dialect ops to LLVM dialect.
+// TVMFFIToLLVM.cc - Pass that lowers TVMFFI dialect ops to LLVM dialect.
 //
 // Currently a scaffold: the conversion target, type converter, and rewrite
 // patterns are not yet implemented. The pass is registered via the static

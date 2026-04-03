@@ -10,34 +10,34 @@ func.func @lowering_scaffold(
     %i: i64,
     %f: f64,
     %p: !llvm.ptr,
-    %t: !tvm_ffi.TVMFFIDLTensor,
-    %a: !tvm_ffi.TVMFFIAny) {
+    %t: !dlpack.dltensor,
+    %a: !tvm_ffi.any) {
   // TODO: Replace with expected LLVM-dialect form after implementing lowering.
 
   // CHECK: tvm_ffi.from_int
   // CHECK: tvm_ffi.to_int
-  %from_int = tvm_ffi.from_int %i : i64 -> !tvm_ffi.TVMFFIAny
-  %to_int = tvm_ffi.to_int %a : !tvm_ffi.TVMFFIAny -> i64
+  %from_int = tvm_ffi.from_int %i : i64 -> !tvm_ffi.any
+  %to_int = tvm_ffi.to_int %a : !tvm_ffi.any -> i64
 
   // CHECK: tvm_ffi.from_float
   // CHECK: tvm_ffi.to_float
-  %from_float = tvm_ffi.from_float %f : f64 -> !tvm_ffi.TVMFFIAny
-  %to_float = tvm_ffi.to_float %a : !tvm_ffi.TVMFFIAny -> f64
+  %from_float = tvm_ffi.from_float %f : f64 -> !tvm_ffi.any
+  %to_float = tvm_ffi.to_float %a : !tvm_ffi.any -> f64
 
   // CHECK: tvm_ffi.from_str
   // CHECK: tvm_ffi.to_str
-  %from_str = tvm_ffi.from_str %p : !llvm.ptr -> !tvm_ffi.TVMFFIAny
-  %to_str = tvm_ffi.to_str %a : !tvm_ffi.TVMFFIAny -> !llvm.ptr
+  %from_str = tvm_ffi.from_str %p : !llvm.ptr -> !tvm_ffi.any
+  %to_str = tvm_ffi.to_str %a : !tvm_ffi.any -> !llvm.ptr
 
   // CHECK: tvm_ffi.from_tensor
   // CHECK: tvm_ffi.to_tensor
-  %from_tensor = tvm_ffi.from_tensor %t : !tvm_ffi.TVMFFIDLTensor -> !tvm_ffi.TVMFFIAny
-  %to_tensor = tvm_ffi.to_tensor %a : !tvm_ffi.TVMFFIAny -> !tvm_ffi.TVMFFIDLTensor
+  %from_tensor = tvm_ffi.from_tensor %t : !dlpack.dltensor -> !tvm_ffi.any
+  %to_tensor = tvm_ffi.to_tensor %a : !tvm_ffi.any -> !dlpack.dltensor
 
   // CHECK: tvm_ffi.from_object
   // CHECK: tvm_ffi.to_object
-  %from_object = tvm_ffi.from_object %p : !llvm.ptr -> !tvm_ffi.TVMFFIAny
-  %to_object = tvm_ffi.to_object %a : !tvm_ffi.TVMFFIAny -> !llvm.ptr
+  %from_object = tvm_ffi.from_object %p : !llvm.ptr -> !tvm_ffi.any
+  %to_object = tvm_ffi.to_object %a : !tvm_ffi.any -> !llvm.ptr
 
   return
 }

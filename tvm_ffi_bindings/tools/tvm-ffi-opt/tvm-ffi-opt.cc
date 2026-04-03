@@ -1,13 +1,14 @@
-// tvm-ffi-opt.cpp - Standalone optimizer driver for the TVMFFI dialect.
+// tvm-ffi-opt.cc - Standalone optimizer driver for TVMFFI and DLPack dialects.
 //
-// Registers TVMFFI conversion passes and inserts the TVMFFIDialect,
-// func::FuncDialect, and LLVM::LLVMDialect into the registry so that
-// tvm-ffi-opt can parse and transform `.mlir` files exercising the dialect.
+// Registers TVMFFI conversion passes and inserts dialects needed by tests and
+// development passes into the registry so tvm-ffi-opt can parse and transform
+// `.mlir` files exercising these dialects.
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "tvm_ffi_bindings/Conversion/TVMFFIToLLVM/TVMFFIToLLVM.h"
+#include "tvm_ffi_bindings/Dialect/DLPack/IR/DLPackDialect.h"
 #include "tvm_ffi_bindings/Dialect/TVMFFI/IR/TVMFFIDialect.h"
 
 int main(int argc, char **argv) {
@@ -15,6 +16,7 @@ int main(int argc, char **argv) {
 
   mlir::DialectRegistry registry;
   registry.insert<mlir::func::FuncDialect, mlir::LLVM::LLVMDialect,
+                  libtriton::dlpack::DLPackDialect,
                   libtriton::tvm_ffi::TVMFFIDialect>();
 
   return mlir::asMainReturnCode(mlir::MlirOptMain(

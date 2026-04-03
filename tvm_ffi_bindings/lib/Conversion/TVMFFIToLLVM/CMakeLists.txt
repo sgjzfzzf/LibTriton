@@ -1,5 +1,5 @@
 add_mlir_conversion_library(TVMFFIToLLVM
-	TVMFFIToLLVM.cpp
+	TVMFFIToLLVM.cc
 
 	LINK_LIBS PUBLIC
 	MLIRPass

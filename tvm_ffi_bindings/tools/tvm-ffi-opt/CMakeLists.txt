@@ -1,5 +1,5 @@
 add_mlir_tool(tvm-ffi-opt
-  tvm-ffi-opt.cpp
+  tvm-ffi-opt.cc
 )
 
 set_target_properties(tvm-ffi-opt PROPERTIES
@@ -9,6 +9,7 @@ set_target_properties(tvm-ffi-opt PROPERTIES
 target_link_libraries(tvm-ffi-opt PRIVATE
   MLIRFuncDialect
   MLIRMlirOptMain
+  DLPackDialect
   TVMFFIToLLVM
   TVMFFIDialect
 )

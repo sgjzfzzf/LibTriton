@@ -6,6 +6,7 @@
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "tvm_ffi_bindings/Dialect/DLPack/IR/DLPackDialect.h"
 #include "tvm_ffi_bindings/Dialect/TVMFFI/IR/TVMFFIDialect.h.inc"
 
 #define GET_TYPEDEF_CLASSES

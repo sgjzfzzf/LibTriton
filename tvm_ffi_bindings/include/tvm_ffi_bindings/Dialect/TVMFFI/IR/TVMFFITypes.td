@@ -10,19 +10,12 @@ class TVMFFI_Type<string name, string typeMnemonic>
   let mnemonic = typeMnemonic;
 }
 
-def TVMFFI_AnyType : TVMFFI_Type<"any", "TVMFFIAny"> {
+def TVMFFI_AnyType : TVMFFI_Type<"any", "any"> {
   let summary = "Type-erased TVM FFI value";
   let description =
       [{A generic, type - erased container type used at the TVM FFI boundary
                               .Conversion ops box typed MLIR values
                                   into this type and unbox them later.}];
-}
-
-def TVMFFI_DLTensor : TVMFFI_Type<"dltensor", "TVMFFIDLTensor"> {
-  let summary = "Opaque DLTensor handle type";
-  let description =
-      [{Represents a TVMFFIDLTensor -
-        compatible handle flowing through TVM FFI conversion operations.}];
 }
 
 #endif // TVM_FFI_BINDINGS_DIALECT_TVMFFI_IR_TVMFFITYPES_TD_
