@@ -9,12 +9,44 @@
 // is already in effect).
 
 #include "tvm_ffi_bindings/Conversion/DLPackToLLVM/DLPackToLLVM.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassRegistry.h"
+#include "mlir/Transforms/DialectConversion.h"
+#include "tvm_ffi_bindings/Dialect/DLPack/IR/DLPackDialect.h"
+#include "tvm_ffi_bindings/Dialect/DLPack/IR/DLPackOps.h"
 
 namespace libtriton::dlpack {
 namespace {
+
+struct LowerFromMemRefOp
+    : public mlir::OpRewritePattern<libtriton::dlpack::FromMemRefOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  mlir::LogicalResult
+  matchAndRewrite(libtriton::dlpack::FromMemRefOp op,
+                  mlir::PatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(
+        op, op.getOutput().getType(), op.getInput());
+    return mlir::success();
+  }
+};
+
+struct LowerToMemRefOp
+    : public mlir::OpRewritePattern<libtriton::dlpack::ToMemRefOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  mlir::LogicalResult
+  matchAndRewrite(libtriton::dlpack::ToMemRefOp op,
+                  mlir::PatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(
+        op, op.getOutput().getType(), op.getInput());
+    return mlir::success();
+  }
+};
 
 class ConvertDLPackToLLVMPass
     : public mlir::PassWrapper<ConvertDLPackToLLVMPass,
@@ -29,7 +61,20 @@ public:
   }
 
   void runOnOperation() final {
-    // TODO: Add conversion target, type converter, and rewrite patterns.
+    mlir::MLIRContext &context = getContext();
+    mlir::RewritePatternSet patterns(&context);
+    patterns.add<LowerFromMemRefOp, LowerToMemRefOp>(&context);
+
+    mlir::ConversionTarget target(context);
+    target.addIllegalDialect<libtriton::dlpack::DLPackDialect>();
+    target.addLegalDialect<mlir::BuiltinDialect, mlir::func::FuncDialect>();
+    target.markUnknownOpDynamicallyLegal(
+        [](mlir::Operation *) { return true; });
+
+    if (failed(mlir::applyPartialConversion(getOperation(), target,
+                                            std::move(patterns)))) {
+      signalPassFailure();
+    }
   }
 };
 

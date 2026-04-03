@@ -2,8 +2,7 @@
 #define TVM_FFI_BINDINGS_DIALECT_DLPACK_IR_DLPACKTYPES_TD_
 
 include "mlir/IR/AttrTypeBase.td"
-include "mlir/IR/DialectBase.td"
-include "tvm_ffi_bindings/Dialect/DLPack/IR/DLPack.td"
+include "tvm_ffi_bindings/Dialect/DLPack/IR/DLPackBase.td"
 
 class DLPack_Type<string name, string typeMnemonic>
     : TypeDef<DLPack_Dialect, name> {

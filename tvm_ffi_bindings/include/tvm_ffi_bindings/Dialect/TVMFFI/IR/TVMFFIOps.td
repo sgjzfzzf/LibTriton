@@ -5,7 +5,7 @@ include "mlir/IR/OpBase.td"
 include "mlir/Dialect/LLVMIR/LLVMOpBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "tvm_ffi_bindings/Dialect/DLPack/IR/DLPackTypes.td"
-include "tvm_ffi_bindings/Dialect/TVMFFI/IR/TVMFFI.td"
+include "tvm_ffi_bindings/Dialect/TVMFFI/IR/TVMFFIBase.td"
 include "tvm_ffi_bindings/Dialect/TVMFFI/IR/TVMFFITypes.td"
 
 class TVMFFI_Op<string mnemonic, list<Trait> traits = []>

@@ -2,8 +2,7 @@
 #define TVM_FFI_BINDINGS_DIALECT_TVMFFI_IR_TVMFFITYPES_TD_
 
 include "mlir/IR/AttrTypeBase.td"
-include "mlir/IR/DialectBase.td"
-include "tvm_ffi_bindings/Dialect/TVMFFI/IR/TVMFFI.td"
+include "tvm_ffi_bindings/Dialect/TVMFFI/IR/TVMFFIBase.td"
 
 class TVMFFI_Type<string name, string typeMnemonic>
     : TypeDef<TVMFFI_Dialect, name> {
