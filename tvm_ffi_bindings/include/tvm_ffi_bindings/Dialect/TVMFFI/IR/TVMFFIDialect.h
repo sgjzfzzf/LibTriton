@@ -5,8 +5,8 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Dialect.h"
 #include "tvm_ffi_bindings/Dialect/DLPack/IR/DLPackTypes.h"
-#include "tvm_ffi_bindings/Dialect/TVMFFI/IR/TVMFFITypes.h"
 #include "tvm_ffi_bindings/Dialect/TVMFFI/IR/TVMFFIDialect.h.inc"
 #include "tvm_ffi_bindings/Dialect/TVMFFI/IR/TVMFFIOps.h"
+#include "tvm_ffi_bindings/Dialect/TVMFFI/IR/TVMFFITypes.h"
 
 #endif // TVM_FFI_BINDINGS_DIALECT_TVMFFI_IR_TVMFFIDIALECT_H_

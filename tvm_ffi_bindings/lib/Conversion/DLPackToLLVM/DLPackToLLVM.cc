@@ -1,5 +1,7 @@
 // DLPackToLLVM.cc - Pass that lowers DLPack dialect ops to LLVM dialect.
 
+#include <algorithm>
+#include <cstdint>
 #include <tuple>
 
 #include "mlir/Conversion/LLVMCommon/MemRefBuilder.h"
@@ -26,7 +28,8 @@ mlir::Type getOpaquePtrType(mlir::MLIRContext *context) {
   return mlir::LLVM::LLVMPointerType::get(context);
 }
 
-mlir::Type getIntegerType(mlir::MLIRContext *context, std::uint32_t width) {
+mlir::Type getIntegerType(mlir::MLIRContext *context,
+                          const std::uint32_t width) {
   return mlir::IntegerType::get(context, width);
 }
 
@@ -167,10 +170,10 @@ mlir::TypedValue<mlir::LLVM::LLVMPointerType>
 copyShapeFromMemRefDescriptorToArray(mlir::ConversionPatternRewriter &rewriter,
                                      mlir::Location loc,
                                      mlir::MemRefDescriptor memRefDescriptor,
-                                     std::uint32_t rank, mlir::Type i64Ty,
+                                     const std::uint32_t rank, mlir::Type i64Ty,
                                      mlir::Type ptrTy) {
-  std::uint32_t allocCount = std::max<std::uint32_t>(rank, 1);
-  mlir::Value sizeVal = mlir::LLVM::ConstantOp::create(
+  const std::uint32_t allocCount = std::max<std::uint32_t>(rank, 1);
+  const mlir::Value sizeVal = mlir::LLVM::ConstantOp::create(
       rewriter, loc, i64Ty, static_cast<int64_t>(allocCount));
   mlir::TypedValue<mlir::LLVM::LLVMPointerType> shapeAlloca =
       mlir::cast<mlir::TypedValue<mlir::LLVM::LLVMPointerType>>(
@@ -193,10 +196,10 @@ mlir::TypedValue<mlir::LLVM::LLVMPointerType>
 copyStrideFromMemRefDescriptorToArray(mlir::ConversionPatternRewriter &rewriter,
                                       mlir::Location loc,
                                       mlir::MemRefDescriptor memRefDescriptor,
-                                      std::uint32_t rank, mlir::Type i64Ty,
-                                      mlir::Type ptrTy) {
-  std::uint32_t allocCount = std::max<std::uint32_t>(rank, 1);
-  mlir::Value sizeVal = mlir::LLVM::ConstantOp::create(
+                                      const std::uint32_t rank,
+                                      mlir::Type i64Ty, mlir::Type ptrTy) {
+  const std::uint32_t allocCount = std::max<std::uint32_t>(rank, 1);
+  const mlir::Value sizeVal = mlir::LLVM::ConstantOp::create(
       rewriter, loc, i64Ty, static_cast<int64_t>(allocCount));
   mlir::TypedValue<mlir::LLVM::LLVMPointerType> stridesAlloca =
       mlir::cast<mlir::TypedValue<mlir::LLVM::LLVMPointerType>>(
@@ -220,7 +223,7 @@ extractShapeAndStrideFromArrays(
     mlir::ConversionPatternRewriter &rewriter, mlir::Location loc,
     mlir::TypedValue<mlir::LLVM::LLVMPointerType> shapePtr,
     mlir::TypedValue<mlir::LLVM::LLVMPointerType> stridesPtr,
-    std::uint32_t rank, mlir::Type i64Ty, mlir::Type ptrTy) {
+    const std::uint32_t rank, mlir::Type i64Ty, mlir::Type ptrTy) {
   llvm::SmallVector<mlir::Value> shapeValues;
   llvm::SmallVector<mlir::Value> strideValues;
   shapeValues.reserve(rank);
@@ -252,12 +255,12 @@ struct LowerFromMemRefOp
   mlir::LogicalResult
   matchAndRewrite(libtriton::dlpack::FromMemRefOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
-    mlir::Location loc = op.getLoc();
+    const mlir::Location loc = op.getLoc();
     mlir::MLIRContext *context = op.getContext();
 
     mlir::MemRefType memRefType =
         mlir::cast<mlir::MemRefType>(op.getInput().getType());
-    std::uint32_t rank = static_cast<std::uint32_t>(memRefType.getRank());
+    const std::uint32_t rank = static_cast<std::uint32_t>(memRefType.getRank());
 
     // adaptor.getInput() is the LLVM memref descriptor struct after type
     // conversion
@@ -289,9 +292,9 @@ struct LowerFromMemRefOp
       return mlir::failure();
 
     // Determine DLDataType fields from the memref element type
-    uint8_t dtypeCode;
-    uint8_t dtypeBits;
-    uint16_t dtypeLanes = 1;
+    std::uint8_t dtypeCode;
+    std::uint8_t dtypeBits;
+    const std::uint16_t dtypeLanes = 1;
     mlir::Type elemTy = memRefType.getElementType();
     if (elemTy.isF16()) {
       dtypeCode = static_cast<std::uint8_t>(kDLFloat);
@@ -306,7 +309,7 @@ struct LowerFromMemRefOp
                    mlir::dyn_cast<mlir::IntegerType>(elemTy)) {
       dtypeCode = integerType.isUnsigned() ? static_cast<std::uint8_t>(kDLUInt)
                                            : static_cast<std::uint8_t>(kDLInt);
-      dtypeBits = static_cast<uint8_t>(integerType.getWidth());
+      dtypeBits = static_cast<std::uint8_t>(integerType.getWidth());
     } else {
       return mlir::failure();
     }
@@ -357,12 +360,12 @@ struct LowerToMemRefOp
   mlir::LogicalResult
   matchAndRewrite(libtriton::dlpack::ToMemRefOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
-    mlir::Location loc = op.getLoc();
+    const mlir::Location loc = op.getLoc();
     mlir::MLIRContext *context = op.getContext();
 
     mlir::MemRefType memRefType =
         mlir::cast<mlir::MemRefType>(op.getOutput().getType());
-    std::uint32_t rank = static_cast<std::uint32_t>(memRefType.getRank());
+    const std::uint32_t rank = static_cast<std::uint32_t>(memRefType.getRank());
 
     mlir::Type outputType =
         getTypeConverter()->convertType(op.getOutput().getType());
