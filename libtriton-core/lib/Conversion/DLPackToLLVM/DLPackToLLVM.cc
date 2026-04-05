@@ -4,8 +4,8 @@
 #include <cstdint>
 #include <tuple>
 
+#include "libtriton_core/Conversion/DLPackToLLVM/DLPackLLVMDescriptors.h"
 #include "libtriton_core/Conversion/DLPackToLLVM/DLPackToLLVM.h"
-#include "libtriton_core/Conversion/Utils/DLPackLLVMDescriptors.h"
 #include "libtriton_core/Dialect/DLPack/IR/DLPackDialect.h"
 #include "libtriton_core/Dialect/DLPack/IR/DLPackOps.h"
 #include "libtriton_core/Dialect/DLPack/IR/DLPackTypes.h"

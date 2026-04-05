@@ -1,9 +1,9 @@
-#ifndef LIBTRITON_CORE_CONVERSION_UTILS_DLPACKLLVMDESCRIPTORS_H_
-#define LIBTRITON_CORE_CONVERSION_UTILS_DLPACKLLVMDESCRIPTORS_H_
+#ifndef LIBTRITON_CORE_CONVERSION_DLPACKTOLLVM_DLPACKLLVMDESCRIPTORS_H_
+#define LIBTRITON_CORE_CONVERSION_DLPACKTOLLVM_DLPACKLLVMDESCRIPTORS_H_
 
 #include <cstdint>
 
-#include "libtriton_core/Conversion/Utils/LLVMStructTypeList.h"
+#include "libtriton_core/Conversion/Utils/LLVMDescriptorCRTPBase.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/BuiltinTypes.h"
 
@@ -290,4 +290,4 @@ DLManagedTensorLLVMDescriptor::deleter(
 
 } // namespace libtriton::conversion::utils
 
-#endif // LIBTRITON_CORE_CONVERSION_UTILS_DLPACKLLVMDESCRIPTORS_H_
+#endif // LIBTRITON_CORE_CONVERSION_DLPACKTOLLVM_DLPACKLLVMDESCRIPTORS_H_
