@@ -55,9 +55,9 @@ func.func @to_str(%arg0: !tvm_ffi.any) {
 // -----
 
 // CHECK-LABEL: func.func @from_tensor
-func.func @from_tensor(%arg0: !dlpack.dltensor) {
-  // CHECK: %[[VALUE:.*]] = tvm_ffi.from_tensor %arg0 : !dlpack.dltensor -> !tvm_ffi.any
-  %0 = tvm_ffi.from_tensor %arg0 : !dlpack.dltensor -> !tvm_ffi.any
+func.func @from_tensor(%arg0: !dlpack.tensor) {
+  // CHECK: %[[VALUE:.*]] = tvm_ffi.from_tensor %arg0 : !dlpack.tensor -> !tvm_ffi.any
+  %0 = tvm_ffi.from_tensor %arg0 : !dlpack.tensor -> !tvm_ffi.any
   return
 }
 
@@ -65,8 +65,8 @@ func.func @from_tensor(%arg0: !dlpack.dltensor) {
 
 // CHECK-LABEL: func.func @to_tensor
 func.func @to_tensor(%arg0: !tvm_ffi.any) {
-  // CHECK: %[[VALUE:.*]] = tvm_ffi.to_tensor %arg0 : !tvm_ffi.any -> !dlpack.dltensor
-  %0 = tvm_ffi.to_tensor %arg0 : !tvm_ffi.any -> !dlpack.dltensor
+  // CHECK: %[[VALUE:.*]] = tvm_ffi.to_tensor %arg0 : !tvm_ffi.any -> !dlpack.tensor
+  %0 = tvm_ffi.to_tensor %arg0 : !tvm_ffi.any -> !dlpack.tensor
   return
 }
 

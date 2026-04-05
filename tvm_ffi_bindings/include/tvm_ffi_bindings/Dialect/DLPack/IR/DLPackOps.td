@@ -11,19 +11,25 @@ class DLPack_Op<string mnemonic, list<Trait> traits = []>
   let assemblyFormat = "$input attr-dict `:` type($input) `->` type($output)";
 }
 
-def DLPack_DLTensorTypeConstraint
-    : Type<CPred<"::llvm::isa<::libtriton::dlpack::DLTensorTypeType>($_self)">,
-           "!dlpack.dltensor type">;
-
 def DLPack_FromMemRefOp : DLPack_Op<"from_memref", [Pure]> {
-  let summary = "Convert an MLIR memref value to a DLTensor handle";
+  let summary = "Convert an MLIR memref value to a DLManagedTensor handle";
   let description =
       [{Bridges a memref -
-        typed MLIR value into a DLPack DLTensor handle value
+        typed MLIR value into a DLPack DLManagedTensor handle value
             .This op is intended as an interoperability scaffold and can be
                 lowered during conversion to LLVM dialect.}];
   let arguments = (ins AnyMemRef : $input);
-  let results = (outs DLPack_DLTensorTypeConstraint : $output);
+  let results = (outs DLPack_DLManagedTensor : $output);
+}
+
+def DLPack_ViewOp : DLPack_Op<"view", [Pure]> {
+  let summary = "Convert a DLManagedTensor handle to a plain DLTensor handle";
+  let description =
+      [{Extracts the DLTensor payload from a DLPack DLManagedTensor handle
+            .This op is intended as an interoperability scaffold and can be
+                lowered during conversion to LLVM dialect.}];
+  let arguments = (ins DLPack_DLManagedTensor : $input);
+  let results = (outs DLPack_DLTensor : $output);
 }
 
 def DLPack_ToMemRefOp : DLPack_Op<"to_memref", [Pure]> {
@@ -33,7 +39,7 @@ def DLPack_ToMemRefOp : DLPack_Op<"to_memref", [Pure]> {
         typed value
             .This op is intended as an interoperability scaffold and can be
                 lowered during conversion to LLVM dialect.}];
-  let arguments = (ins DLPack_DLTensorTypeConstraint : $input);
+  let arguments = (ins DLPack_DLTensor : $input);
   let results = (outs AnyMemRef : $output);
 }
 

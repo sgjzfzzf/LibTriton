@@ -10,7 +10,7 @@ func.func @lowering_scaffold(
     %i: i64,
     %f: f64,
     %p: !llvm.ptr,
-    %t: !dlpack.dltensor,
+  %t: !dlpack.tensor,
     %a: !tvm_ffi.any) {
   // TODO: Replace with expected LLVM-dialect form after implementing lowering.
 
@@ -31,8 +31,8 @@ func.func @lowering_scaffold(
 
   // CHECK: tvm_ffi.from_tensor
   // CHECK: tvm_ffi.to_tensor
-  %from_tensor = tvm_ffi.from_tensor %t : !dlpack.dltensor -> !tvm_ffi.any
-  %to_tensor = tvm_ffi.to_tensor %a : !tvm_ffi.any -> !dlpack.dltensor
+  %from_tensor = tvm_ffi.from_tensor %t : !dlpack.tensor -> !tvm_ffi.any
+  %to_tensor = tvm_ffi.to_tensor %a : !tvm_ffi.any -> !dlpack.tensor
 
   // CHECK: tvm_ffi.from_object
   // CHECK: tvm_ffi.to_object

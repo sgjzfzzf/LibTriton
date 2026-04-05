@@ -5,16 +5,9 @@
 #include <memory>
 
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
-#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
-#include "mlir/IR/MLIRContext.h"
 #include "mlir/Pass/Pass.h"
 
 namespace libtriton::dlpack {
-
-mlir::LLVM::LLVMStructType getDLContextLLVMType(mlir::MLIRContext *context);
-mlir::LLVM::LLVMStructType getDLDataTypeLLVMType(mlir::MLIRContext *context);
-mlir::LLVM::LLVMStructType getDLTensorLLVMType(mlir::MLIRContext *context,
-                                               std::uint32_t sizeTWidth);
 
 void populateDLPackToLLVMTypeConversions(
     mlir::LLVMTypeConverter &typeConverter);
