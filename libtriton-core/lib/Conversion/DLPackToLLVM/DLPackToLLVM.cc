@@ -6,6 +6,7 @@
 
 #include "libtriton_core/Conversion/DLPackToLLVM/DLPackLLVMDescriptors.h"
 #include "libtriton_core/Conversion/DLPackToLLVM/DLPackToLLVM.h"
+#include "libtriton_core/Conversion/Utils/StdLibCFunctionDeclUtils.h"
 #include "libtriton_core/Dialect/DLPack/IR/DLPackDialect.h"
 #include "libtriton_core/Dialect/DLPack/IR/DLPackOps.h"
 #include "libtriton_core/Dialect/DLPack/IR/DLPackTypes.h"
@@ -27,6 +28,9 @@
 namespace libtriton::dlpack {
 namespace {
 
+constexpr const char *kDefaultManagedTensorDeleterName =
+    "__libtriton_dlpack_default_managed_tensor_deleter";
+
 mlir::Value materializeCast(mlir::OpBuilder &builder, mlir::Type resultType,
                             mlir::ValueRange inputs, mlir::Location loc) {
   if (inputs.size() != 1)
@@ -37,55 +41,134 @@ mlir::Value materializeCast(mlir::OpBuilder &builder, mlir::Type resultType,
 }
 
 mlir::TypedValue<mlir::LLVM::LLVMPointerType>
+allocateArrayWithMalloc(mlir::ConversionPatternRewriter &rewriter,
+                        mlir::ModuleOp moduleOp, mlir::Location loc,
+                        const std::uint32_t count, mlir::Type i64Ty,
+                        mlir::Type i8Ty, mlir::Type ptrTy) {
+  // Call malloc(count * sizeof(int64_t))
+  mlir::FailureOr<mlir::LLVM::LLVMFuncOp> mallocOrErr =
+      libtriton::conversion::utils::getOrCreateMalloc(moduleOp);
+  if (mlir::failed(mallocOrErr))
+    return nullptr;
+
+  mlir::Value sizeVal = mlir::LLVM::ConstantOp::create(
+      rewriter, loc, i64Ty, static_cast<int64_t>(count * sizeof(int64_t)));
+  mlir::LLVM::CallOp callOp = mlir::LLVM::CallOp::create(
+      rewriter, loc, *mallocOrErr, mlir::ValueRange{sizeVal});
+
+  return mlir::cast<mlir::TypedValue<mlir::LLVM::LLVMPointerType>>(
+      callOp.getResult());
+}
+
+mlir::FailureOr<mlir::LLVM::LLVMFuncOp> getOrCreateDefaultManagedTensorDeleter(
+    mlir::ModuleOp moduleOp, mlir::LLVM::LLVMStructType dlManagedTensorTy) {
+  mlir::MLIRContext *context = moduleOp.getContext();
+  mlir::Type voidTy = mlir::LLVM::LLVMVoidType::get(context);
+  mlir::Type ptrTy = mlir::LLVM::LLVMPointerType::get(context);
+  mlir::LLVM::LLVMFunctionType funcType = mlir::LLVM::LLVMFunctionType::get(
+      voidTy, llvm::SmallVector<mlir::Type>{ptrTy});
+
+  mlir::LLVM::LLVMFuncOp existingFunc =
+      moduleOp.lookupSymbol<mlir::LLVM::LLVMFuncOp>(
+          kDefaultManagedTensorDeleterName);
+  if (existingFunc) {
+    if (existingFunc.getFunctionType() != funcType) {
+      moduleOp.emitError() << "existing llvm.func @"
+                           << kDefaultManagedTensorDeleterName
+                           << " has incompatible signature";
+      return mlir::failure();
+    }
+    return existingFunc;
+  }
+
+  mlir::FailureOr<mlir::LLVM::LLVMFuncOp> freeOrErr =
+      libtriton::conversion::utils::getOrCreateFree(moduleOp);
+  if (mlir::failed(freeOrErr)) {
+    return mlir::failure();
+  }
+
+  mlir::OpBuilder builder(context);
+  builder.setInsertionPointToStart(moduleOp.getBody());
+  mlir::LLVM::LLVMFuncOp deleterFunc = mlir::LLVM::LLVMFuncOp::create(
+      builder, moduleOp.getLoc(), kDefaultManagedTensorDeleterName, funcType);
+
+  mlir::Block *entryBlock = deleterFunc.addEntryBlock(builder);
+  mlir::OpBuilder bodyBuilder = mlir::OpBuilder::atBlockEnd(entryBlock);
+  mlir::Location loc = moduleOp.getLoc();
+
+  mlir::Value managedTensorPtr = entryBlock->getArgument(0);
+  mlir::Value managedTensorValue =
+      mlir::LLVM::LoadOp::create(bodyBuilder, loc, dlManagedTensorTy,
+                                 managedTensorPtr)
+          .getResult();
+  mlir::Value dlTensorValue = mlir::LLVM::ExtractValueOp::create(
+      bodyBuilder, loc, managedTensorValue, llvm::ArrayRef<int64_t>{0});
+  mlir::Value shapePtr = mlir::LLVM::ExtractValueOp::create(
+      bodyBuilder, loc, dlTensorValue, llvm::ArrayRef<int64_t>{4});
+  mlir::Value stridesPtr = mlir::LLVM::ExtractValueOp::create(
+      bodyBuilder, loc, dlTensorValue, llvm::ArrayRef<int64_t>{5});
+
+  mlir::LLVM::CallOp::create(bodyBuilder, loc, *freeOrErr,
+                             mlir::ValueRange{stridesPtr});
+  mlir::LLVM::CallOp::create(bodyBuilder, loc, *freeOrErr,
+                             mlir::ValueRange{shapePtr});
+  mlir::LLVM::ReturnOp::create(bodyBuilder, loc, mlir::ValueRange{});
+  return deleterFunc;
+}
+
+mlir::TypedValue<mlir::LLVM::LLVMPointerType>
 copyShapeFromMemRefDescriptorToArray(mlir::ConversionPatternRewriter &rewriter,
+                                     mlir::ModuleOp moduleOp,
                                      mlir::Location loc,
                                      mlir::MemRefDescriptor memRefDescriptor,
                                      const std::uint32_t rank, mlir::Type i64Ty,
-                                     mlir::Type ptrTy) {
-  const std::uint32_t allocCount = std::max<std::uint32_t>(rank, 1);
-  const mlir::Value sizeVal = mlir::LLVM::ConstantOp::create(
-      rewriter, loc, i64Ty, static_cast<int64_t>(allocCount));
-  mlir::TypedValue<mlir::LLVM::LLVMPointerType> shapeAlloca =
-      mlir::cast<mlir::TypedValue<mlir::LLVM::LLVMPointerType>>(
-          mlir::LLVM::AllocaOp::create(rewriter, loc, ptrTy, i64Ty, sizeVal)
-              .getResult());
+                                     mlir::Type i8Ty, mlir::Type ptrTy) {
+  mlir::MLIRContext *context = moduleOp.getContext();
+
+  mlir::TypedValue<mlir::LLVM::LLVMPointerType> shapeAlloc =
+      allocateArrayWithMalloc(rewriter, moduleOp, loc, rank, i64Ty, i8Ty,
+                              ptrTy);
+  if (!shapeAlloc)
+    return nullptr;
 
   for (std::uint32_t i = 0; i < rank; ++i) {
     mlir::Value shapeElem = memRefDescriptor.size(rewriter, loc, i);
 
     mlir::Value shapeGep = mlir::LLVM::GEPOp::create(
-        rewriter, loc, ptrTy, i64Ty, shapeAlloca,
+        rewriter, loc, ptrTy, i64Ty, shapeAlloc,
         llvm::ArrayRef<mlir::LLVM::GEPArg>{static_cast<int32_t>(i)});
     mlir::LLVM::StoreOp::create(rewriter, loc, shapeElem, shapeGep);
   }
 
-  return shapeAlloca;
+  return shapeAlloc;
 }
 
 mlir::TypedValue<mlir::LLVM::LLVMPointerType>
 copyStrideFromMemRefDescriptorToArray(mlir::ConversionPatternRewriter &rewriter,
+                                      mlir::ModuleOp moduleOp,
                                       mlir::Location loc,
                                       mlir::MemRefDescriptor memRefDescriptor,
                                       const std::uint32_t rank,
-                                      mlir::Type i64Ty, mlir::Type ptrTy) {
-  const std::uint32_t allocCount = std::max<std::uint32_t>(rank, 1);
-  const mlir::Value sizeVal = mlir::LLVM::ConstantOp::create(
-      rewriter, loc, i64Ty, static_cast<int64_t>(allocCount));
-  mlir::TypedValue<mlir::LLVM::LLVMPointerType> stridesAlloca =
-      mlir::cast<mlir::TypedValue<mlir::LLVM::LLVMPointerType>>(
-          mlir::LLVM::AllocaOp::create(rewriter, loc, ptrTy, i64Ty, sizeVal)
-              .getResult());
+                                      mlir::Type i64Ty, mlir::Type i8Ty,
+                                      mlir::Type ptrTy) {
+  mlir::MLIRContext *context = moduleOp.getContext();
+
+  mlir::TypedValue<mlir::LLVM::LLVMPointerType> stridesAlloc =
+      allocateArrayWithMalloc(rewriter, moduleOp, loc, rank, i64Ty, i8Ty,
+                              ptrTy);
+  if (!stridesAlloc)
+    return nullptr;
 
   for (std::uint32_t i = 0; i < rank; ++i) {
     mlir::Value strideElem = memRefDescriptor.stride(rewriter, loc, i);
 
     mlir::Value stridesGep = mlir::LLVM::GEPOp::create(
-        rewriter, loc, ptrTy, i64Ty, stridesAlloca,
+        rewriter, loc, ptrTy, i64Ty, stridesAlloc,
         llvm::ArrayRef<mlir::LLVM::GEPArg>{static_cast<int32_t>(i)});
     mlir::LLVM::StoreOp::create(rewriter, loc, strideElem, stridesGep);
   }
 
-  return stridesAlloca;
+  return stridesAlloc;
 }
 
 std::tuple<llvm::SmallVector<mlir::Value>, llvm::SmallVector<mlir::Value>>
@@ -127,6 +210,9 @@ struct LowerFromMemRefOp
                   mlir::ConversionPatternRewriter &rewriter) const final {
     const mlir::Location loc = op.getLoc();
     mlir::MLIRContext *context = op.getContext();
+    mlir::ModuleOp moduleOp = op->getParentOfType<mlir::ModuleOp>();
+    if (!moduleOp)
+      return mlir::failure();
 
     mlir::MemRefType memRefType =
         mlir::cast<mlir::MemRefType>(op.getInput().getType());
@@ -199,12 +285,31 @@ struct LowerFromMemRefOp
         mlir::cast<mlir::TypedValue<mlir::IntegerType>>(
             memDesc.offset(rewriter, loc));
 
+    const std::uint64_t elemByteWidth = std::max<std::uint64_t>(
+        1, (static_cast<std::uint64_t>(dtypeBits) + 7) / 8);
+    mlir::TypedValue<mlir::IntegerType> elemByteWidthValue =
+        mlir::cast<mlir::TypedValue<mlir::IntegerType>>(
+            mlir::LLVM::ConstantOp::create(rewriter, loc, i64Ty,
+                                           static_cast<int64_t>(elemByteWidth))
+                .getResult());
+
+    mlir::TypedValue<mlir::IntegerType> byteOffsetValue =
+        mlir::cast<mlir::TypedValue<mlir::IntegerType>>(
+            mlir::LLVM::MulOp::create(rewriter, loc, elemOffset,
+                                      elemByteWidthValue)
+                .getResult());
+
     mlir::TypedValue<mlir::LLVM::LLVMPointerType> shapeAlloca =
-        copyShapeFromMemRefDescriptorToArray(rewriter, loc, memDesc, rank,
-                                             i64Ty, ptrTy);
+        copyShapeFromMemRefDescriptorToArray(rewriter, moduleOp, loc, memDesc,
+                                             rank, i64Ty, i8Ty, ptrTy);
+    if (!shapeAlloca)
+      return mlir::failure();
+
     mlir::TypedValue<mlir::LLVM::LLVMPointerType> stridesAlloca =
-        copyStrideFromMemRefDescriptorToArray(rewriter, loc, memDesc, rank,
-                                              i64Ty, ptrTy);
+        copyStrideFromMemRefDescriptorToArray(rewriter, moduleOp, loc, memDesc,
+                                              rank, i64Ty, i8Ty, ptrTy);
+    if (!stridesAlloca)
+      return mlir::failure();
 
     // Build DLContext struct: {device_type = kCPU = 1, device_id = 0}
     mlir::TypedValue<mlir::IntegerType> deviceTypeValue =
@@ -250,15 +355,20 @@ struct LowerFromMemRefOp
     libtriton::conversion::utils::DLTensorLLVMDescriptor dlTensor =
         libtriton::conversion::utils::DLTensorLLVMDescriptor::build(
             rewriter, loc, dlTensorTy, dataPtr, dlContext, ndimValue,
-            dlDataType, shapeAlloca, stridesAlloca, elemOffset);
+            dlDataType, shapeAlloca, stridesAlloca, byteOffsetValue);
 
     mlir::TypedValue<mlir::LLVM::LLVMPointerType> managerCtxValue =
         mlir::cast<mlir::TypedValue<mlir::LLVM::LLVMPointerType>>(
             mlir::LLVM::ZeroOp::create(rewriter, loc, ptrTy).getResult());
-    // TODO: Replace null deleter with real ownership-aware cleanup callback.
+    mlir::FailureOr<mlir::LLVM::LLVMFuncOp> deleterOrErr =
+        getOrCreateDefaultManagedTensorDeleter(moduleOp, dlManagedTensorTy);
+    if (mlir::failed(deleterOrErr))
+      return mlir::failure();
+
     mlir::TypedValue<mlir::LLVM::LLVMPointerType> deleterValue =
         mlir::cast<mlir::TypedValue<mlir::LLVM::LLVMPointerType>>(
-            mlir::LLVM::ZeroOp::create(rewriter, loc, ptrTy).getResult());
+            mlir::LLVM::AddressOfOp::create(rewriter, loc, *deleterOrErr)
+                .getResult());
 
     libtriton::conversion::utils::DLManagedTensorLLVMDescriptor
         dlManagedTensor =

@@ -1,25 +1,60 @@
 // RUN: libtriton-core-opt %s -convert-to-llvm | FileCheck %s
 // RUN: libtriton-core-opt %s -convert-to-llvm | mlir-opt -convert-func-to-llvm -reconcile-unrealized-casts | mlir-translate --mlir-to-llvmir -o /dev/null
 
+// CHECK: llvm.func @__libtriton_dlpack_default_managed_tensor_deleter(%[[DEL_ARG:.*]]: !llvm.ptr)
+// CHECK: %[[DEL_MANAGED:.*]] = llvm.load %[[DEL_ARG]] : !llvm.ptr -> !llvm.struct<(struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>
+// CHECK: %[[DEL_TENSOR:.*]] = llvm.extractvalue %[[DEL_MANAGED]][0]
+// CHECK: %[[DEL_SHAPE:.*]] = llvm.extractvalue %[[DEL_TENSOR]][4]
+// CHECK: %[[DEL_STRIDE:.*]] = llvm.extractvalue %[[DEL_TENSOR]][5]
+// CHECK: llvm.call @free(%[[DEL_STRIDE]]) : (!llvm.ptr) -> ()
+// CHECK: llvm.call @free(%[[DEL_SHAPE]]) : (!llvm.ptr) -> ()
+// CHECK: llvm.return
+
+// CHECK: llvm.func @free(!llvm.ptr)
+// CHECK: llvm.func @malloc(i64) -> !llvm.ptr
+
 // CHECK-LABEL: func.func @lower_from_memref
 // CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<(ptr, ptr, i64, array<1 x i64>, array<1 x i64>)>)
 // CHECK-SAME: -> !llvm.struct<(struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>
+// CHECK-NOT: llvm.alloca
 func.func @lower_from_memref(%arg0: memref<?xf32>) -> !dlpack.managed_tensor {
+  // Extract data pointer and offset from memref descriptor
   // CHECK: %[[ALIGNED_PTR:.*]] = llvm.extractvalue %[[ARG]][1]
   // CHECK: %[[OFFSET:.*]] = llvm.extractvalue %[[ARG]][2]
-  // CHECK: %[[SHAPE_SLOT:.*]] = llvm.alloca {{.*}} x i64
+  // CHECK: %[[ELEM_BYTES:.*]] = llvm.mlir.constant(4 : i64)
+  // CHECK: %[[BYTE_OFFSET:.*]] = llvm.mul %[[OFFSET]], %[[ELEM_BYTES]] : i64
+  
+  // Allocate shape array via malloc
+  // CHECK: %[[SHAPE_SIZE:.*]] = llvm.mlir.constant(8 : i64)
+  // CHECK: %[[SHAPE_SLOT:.*]] = llvm.call @malloc(%[[SHAPE_SIZE]]) : (i64) -> !llvm.ptr
   // CHECK: %[[DIM0_SIZE:.*]] = llvm.extractvalue %[[ARG]][3, 0]
   // CHECK: %[[SHAPE_GEP:.*]] = llvm.getelementptr %[[SHAPE_SLOT]][0]
   // CHECK: llvm.store %[[DIM0_SIZE]], %[[SHAPE_GEP]]
-  // CHECK: %[[STRIDE_SLOT:.*]] = llvm.alloca {{.*}} x i64
+  
+  // Allocate stride array via malloc
+  // CHECK: %[[STRIDE_SIZE:.*]] = llvm.mlir.constant(8 : i64)
+  // CHECK: %[[STRIDE_SLOT:.*]] = llvm.call @malloc(%[[STRIDE_SIZE]]) : (i64) -> !llvm.ptr
   // CHECK: %[[DIM0_STRIDE:.*]] = llvm.extractvalue %[[ARG]][4, 0]
   // CHECK: %[[STRIDE_GEP:.*]] = llvm.getelementptr %[[STRIDE_SLOT]][0]
   // CHECK: llvm.store %[[DIM0_STRIDE]], %[[STRIDE_GEP]]
+  
+  // Build DLContext and DLDataType structures
   // CHECK: llvm.mlir.constant(1 : i32)
+  // CHECK: llvm.mlir.constant(0 : i32)
   // CHECK: llvm.mlir.constant(2 : i8)
   // CHECK: llvm.mlir.constant(32 : i8)
   // CHECK: llvm.mlir.constant(1 : i16)
-  // CHECK: llvm.mlir.zero : !llvm.ptr
+
+  // CHECK: llvm.insertvalue %[[SHAPE_SLOT]], %{{.*}}[4]
+  // CHECK: llvm.insertvalue %[[STRIDE_SLOT]], %{{.*}}[5]
+  // CHECK: llvm.insertvalue %[[BYTE_OFFSET]], %{{.*}}[6]
+
+  // CHECK: %[[MANAGER_CTX:.*]] = llvm.mlir.zero : !llvm.ptr
+  // CHECK: %[[DELETER_ADDR:.*]] = llvm.mlir.addressof @__libtriton_dlpack_default_managed_tensor_deleter : !llvm.ptr
+  // CHECK: llvm.insertvalue %[[MANAGER_CTX]], %{{.*}}[1]
+  // CHECK: llvm.insertvalue %[[DELETER_ADDR]], %{{.*}}[2]
+  
+  // Build managed tensor with malloc-allocated arrays
   // CHECK: return %[[MANAGED:.*]] : !llvm.struct<(struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>
   %0 = dlpack.from_memref %arg0 : memref<?xf32> -> !dlpack.managed_tensor
   return %0 : !dlpack.managed_tensor
@@ -47,6 +82,9 @@ func.func @lower_to_memref(%arg0: !dlpack.tensor) -> memref<?xf32> {
   // CHECK: %[[SHAPE_PTR:.*]] = llvm.extractvalue %[[ARG]][4]
   // CHECK: %[[STRIDE_PTR:.*]] = llvm.extractvalue %[[ARG]][5]
   // CHECK: %[[BYTE_OFFSET:.*]] = llvm.extractvalue %[[ARG]][6]
+  // CHECK: llvm.insertvalue %[[DATA_PTR]], %{{.*}}[0]
+  // CHECK: llvm.insertvalue %[[DATA_PTR]], %{{.*}}[1]
+  // CHECK: llvm.insertvalue %[[BYTE_OFFSET]], %{{.*}}[2]
   // CHECK: %[[SHAPE_GEP:.*]] = llvm.getelementptr %[[SHAPE_PTR]]
   // CHECK: %[[SHAPE0:.*]] = llvm.load %[[SHAPE_GEP]]
   // CHECK: %[[STRIDE_GEP:.*]] = llvm.getelementptr %[[STRIDE_PTR]]

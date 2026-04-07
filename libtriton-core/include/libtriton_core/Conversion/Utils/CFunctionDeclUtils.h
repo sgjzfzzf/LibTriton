@@ -12,8 +12,7 @@
 
 namespace libtriton::conversion::utils {
 
-template <typename T>
-inline constexpr bool kUnsupportedCType = false;
+template <typename T> inline constexpr bool kUnsupportedCType = false;
 
 template <typename CType> struct CTypeToLLVM {
   static mlir::Type get(mlir::MLIRContext *context) {
@@ -91,13 +90,24 @@ getOrCreateCAPI(mlir::ModuleOp moduleOp, llvm::StringRef symbol) {
                                         expectedType);
 }
 
+template <typename Ret, typename... Args>
+struct CFunctionTraits<Ret (*)(Args...) noexcept> {
+  using Signature = CFunctionSignature<Ret(Args...)>;
+  static mlir::LLVM::LLVMFunctionType getLLVMType(mlir::MLIRContext *context) {
+    return Signature::getLLVMType(context);
+  }
+};
+
 } // namespace libtriton::conversion::utils
 
-#define LIBTRITON_DECLARE_CAPI_GET_OR_CREATE(Func)                            \
-  inline mlir::FailureOr<mlir::LLVM::LLVMFuncOp> getOrCreate##Func(           \
-      mlir::ModuleOp moduleOp) {                                              \
-    return ::libtriton::conversion::utils::getOrCreateCAPI<decltype(&::Func)>(\
-        moduleOp, #Func);                                                     \
+#define LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(Func, Name)                 \
+  inline mlir::FailureOr<mlir::LLVM::LLVMFuncOp> getOrCreate##Name(            \
+      mlir::ModuleOp moduleOp) {                                               \
+    return ::libtriton::conversion::utils::getOrCreateCAPI<decltype(&::Func)>( \
+        moduleOp, #Func);                                                      \
   }
+
+#define LIBTRITON_DECLARE_CAPI_GET_OR_CREATE(Func)                             \
+  LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(Func, Func)
 
 #endif // LIBTRITON_CORE_CONVERSION_UTILS_CFUNCTIONDECLUTILS_H_
