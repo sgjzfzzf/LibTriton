@@ -1,10 +1,10 @@
 // libtriton-core-opt.cc - Standalone optimizer driver for TVMFFI and DLPack
 // dialects.
 //
-// Registers TVMFFI conversion passes and inserts dialects needed by tests and
-// development passes into the registry so libtriton-core-opt can parse and
-// transform
-// `.mlir` files exercising these dialects.
+// Registers core LLVM conversion pipeline passes and inserts dialects plus
+// convert-to-LLVM interfaces needed by tests and development passes so
+// libtriton-core-opt can parse and transform `.mlir` files exercising these
+// dialects.
 
 #include "libtriton_core/Conversion/DLPackToLLVM/DLPackToLLVM.h"
 #include "libtriton_core/Conversion/TVMFFIToLLVM/TVMFFIToLLVM.h"
@@ -17,8 +17,6 @@
 #include "mlir/Transforms/Passes.h"
 
 int main(int argc, char **argv) {
-  libtriton::dlpack::registerDLPackToLLVMPasses();
-  libtriton::tvm_ffi::registerTVMFFIToLLVMPasses();
   mlir::registerConvertToLLVMPass();
   mlir::registerReconcileUnrealizedCastsPass();
 

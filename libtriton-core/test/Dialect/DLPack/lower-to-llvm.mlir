@@ -1,4 +1,5 @@
 // RUN: libtriton-core-opt %s -convert-to-llvm | FileCheck %s
+// RUN: libtriton-core-opt %s -convert-to-llvm | mlir-opt -convert-func-to-llvm -reconcile-unrealized-casts | mlir-translate --mlir-to-llvmir -o /dev/null
 
 // CHECK-LABEL: func.func @lower_from_memref
 // CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<(ptr, ptr, i64, array<1 x i64>, array<1 x i64>)>)

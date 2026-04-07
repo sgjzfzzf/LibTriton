@@ -1,5 +1,6 @@
 // RUN: libtriton-core-opt %s -emit-tvm-ffi-interface | FileCheck %s --check-prefix=CHECK-TVM-FFI
 // RUN: libtriton-core-opt %s -emit-tvm-ffi-interface -convert-to-llvm -reconcile-unrealized-casts | FileCheck %s --check-prefix=CHECK-LLVM
+// RUN: libtriton-core-opt %s -emit-tvm-ffi-interface -convert-to-llvm -reconcile-unrealized-casts | mlir-opt -convert-arith-to-llvm -convert-func-to-llvm -reconcile-unrealized-casts | mlir-translate --mlir-to-llvmir -o /dev/null
 
 // CHECK-TVM-FFI-NOT: func.func @__tvm_ffi_plain
 // CHECK-TVM-FFI-LABEL: func.func @id_i64

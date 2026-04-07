@@ -1,4 +1,5 @@
 // RUN: libtriton-core-opt %s -convert-to-llvm | FileCheck %s
+// RUN: libtriton-core-opt %s -convert-to-llvm | mlir-opt -convert-func-to-llvm -reconcile-unrealized-casts | mlir-translate --mlir-to-llvmir -o /dev/null
 
 // CHECK: llvm.func @TVMFFITensorFromDLPack
 
