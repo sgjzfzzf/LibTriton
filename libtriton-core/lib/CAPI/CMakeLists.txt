@@ -20,3 +20,9 @@ add_mlir_public_c_api_library(LibTritonCoreCAPI
   TVMFFIDialect
   TVMFFIToLLVM
 )
+
+install(TARGETS LibTritonCoreCAPI
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)

@@ -25,12 +25,6 @@ ExternalProject_Add(
         -DMLIR_ENABLE_BINDINGS_PYTHON=ON
         -DPython_FIND_VIRTUALENV=ONLY
         -DPython3_FIND_VIRTUALENV=ONLY
-    USES_TERMINAL_DOWNLOAD ON
-    USES_TERMINAL_UPDATE ON
-    USES_TERMINAL_CONFIGURE ON
-    USES_TERMINAL_BUILD ON
-    USES_TERMINAL_INSTALL ON
-    USES_TERMINAL_TEST ON
 )
 
 ExternalProject_Add(
@@ -55,12 +49,28 @@ ExternalProject_Add(
         -DPython_FIND_VIRTUALENV=ONLY
         -DPython3_FIND_VIRTUALENV=ONLY
         -DTORCH_MLIR_PYTHON_PACKAGE_PREFIX=libtriton._C.torch_mlir.
-    USES_TERMINAL_DOWNLOAD ON
-    USES_TERMINAL_UPDATE ON
-    USES_TERMINAL_CONFIGURE ON
-    USES_TERMINAL_BUILD ON
-    USES_TERMINAL_INSTALL ON
-    USES_TERMINAL_TEST ON
+)
+
+ExternalProject_Add(
+    libtriton-core
+    SOURCE_DIR ${CMAKE_SOURCE_DIR}/libtriton-core
+    BINARY_DIR ${CMAKE_BINARY_DIR}/libtriton-core
+    INSTALL_DIR ${CMAKE_BINARY_DIR}/install/libtriton-core
+    DEPENDS llvm-project
+    CMAKE_ARGS
+        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+        -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+        -DCMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER}
+        -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=${CMAKE_EXPORT_COMPILE_COMMANDS}
+        -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/install/libtriton-core
+        -DCMAKE_LINKER_TYPE=${CMAKE_LINKER_TYPE}
+        -DLLVM_DIR=${CMAKE_BINARY_DIR}/install/llvm-project/lib/cmake/llvm
+        -DMLIR_DIR=${CMAKE_BINARY_DIR}/install/llvm-project/lib/cmake/mlir
+        -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"
+        -DPython_FIND_VIRTUALENV=ONLY
+        -DPython3_FIND_VIRTUALENV=ONLY
 )
 
 install(
@@ -70,5 +80,10 @@ install(
 
 install(
     DIRECTORY ${CMAKE_BINARY_DIR}/install/torch-mlir/python_packages/torch_mlir/torch_mlir
+    DESTINATION .
+)
+
+install(
+    DIRECTORY ${CMAKE_BINARY_DIR}/install/libtriton-core/python_packages/libtriton-core/libtriton_core
     DESTINATION .
 )

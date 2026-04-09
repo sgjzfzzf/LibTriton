@@ -16,6 +16,10 @@ configure_lit_site_cfg(
 add_subdirectory(Integration)
 add_subdirectory(CAPI)
 
+if(LIBTRITON_CORE_ENABLE_PYTHON_BINDINGS)
+  add_subdirectory(Python)
+endif()
+
 set(LIBTRITON_CORE_TEST_DEPENDS
   FileCheck
   ${CAPI_TEST_TARGETS}
