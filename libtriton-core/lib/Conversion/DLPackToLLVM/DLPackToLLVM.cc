@@ -84,46 +84,12 @@ mlir::FailureOr<mlir::LLVM::LLVMFuncOp> getOrCreateDefaultManagedTensorDeleter(
     return existingFunc;
   }
 
-  mlir::FailureOr<mlir::LLVM::LLVMFuncOp> freeOrErr =
-      libtriton::conversion::utils::getOrCreateFree(moduleOp);
-  if (mlir::failed(freeOrErr)) {
-    return mlir::failure();
-  }
-
   mlir::OpBuilder builder(context);
   builder.setInsertionPointToStart(moduleOp.getBody());
-  mlir::LLVM::LLVMFuncOp deleterFunc = mlir::LLVM::LLVMFuncOp::create(
-      builder, moduleOp.getLoc(), kDefaultManagedTensorDeleterName, funcType);
-
-  mlir::Block *entryBlock = deleterFunc.addEntryBlock(builder);
-  mlir::OpBuilder bodyBuilder = mlir::OpBuilder::atBlockEnd(entryBlock);
-  mlir::Location loc = moduleOp.getLoc();
-
-  mlir::Value managedTensorPtr = entryBlock->getArgument(0);
-  mlir::Value managedTensorValue =
-      mlir::LLVM::LoadOp::create(bodyBuilder, loc, dlManagedTensorTy,
-                                 managedTensorPtr)
-          .getResult();
-  mlir::Value dlTensorValue = mlir::LLVM::ExtractValueOp::create(
-      bodyBuilder, loc, managedTensorValue, llvm::ArrayRef<int64_t>{0});
-  mlir::Value dataPtr = mlir::LLVM::ExtractValueOp::create(
-      bodyBuilder, loc, dlTensorValue, llvm::ArrayRef<int64_t>{0});
-  mlir::Value shapePtr = mlir::LLVM::ExtractValueOp::create(
-      bodyBuilder, loc, dlTensorValue, llvm::ArrayRef<int64_t>{4});
-  mlir::Value stridesPtr = mlir::LLVM::ExtractValueOp::create(
-      bodyBuilder, loc, dlTensorValue, llvm::ArrayRef<int64_t>{5});
-
-  // TODO(cuda): adapt deleter for device-backed data pointers.
-  mlir::LLVM::CallOp::create(bodyBuilder, loc, *freeOrErr,
-                             mlir::ValueRange{dataPtr});
-  mlir::LLVM::CallOp::create(bodyBuilder, loc, *freeOrErr,
-                             mlir::ValueRange{stridesPtr});
-  mlir::LLVM::CallOp::create(bodyBuilder, loc, *freeOrErr,
-                             mlir::ValueRange{shapePtr});
-  mlir::LLVM::CallOp::create(bodyBuilder, loc, *freeOrErr,
-                             mlir::ValueRange{managedTensorPtr});
-  mlir::LLVM::ReturnOp::create(bodyBuilder, loc, mlir::ValueRange{});
-  return deleterFunc;
+  mlir::LLVM::LLVMFuncOp deleterDecl = mlir::LLVM::LLVMFuncOp::create(
+      builder, moduleOp.getLoc(), kDefaultManagedTensorDeleterName, funcType,
+      mlir::LLVM::Linkage::External);
+  return deleterDecl;
 }
 
 mlir::TypedValue<mlir::LLVM::LLVMPointerType>

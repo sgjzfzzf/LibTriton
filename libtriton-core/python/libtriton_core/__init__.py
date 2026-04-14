@@ -1,7 +1,8 @@
-from ._libtritonCore import register_all_dialects, register_all_passes
-from . import compiler_utils, execution_engine, fx, ir, passmanager, rewrite
+from ._mlir_libs._libtritonCore import register_all_dialects, register_all_passes
+from . import capi_utils, compiler_utils, execution_engine, fx, ir, passmanager, rewrite
 
 __all__ = [
+    "capi_utils",
     "compiler_utils",
     "execution_engine",
     "fx",

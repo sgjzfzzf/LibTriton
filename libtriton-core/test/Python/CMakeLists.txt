@@ -22,6 +22,14 @@ add_test(
 )
 
 add_test(
+  NAME libtriton-core-python-tvm-ffi-add
+  COMMAND ${CMAKE_COMMAND} -E env
+    PYTHONPATH=${_libtriton_python_source_dir}:${_libtriton_core_python_package_dir}
+    ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tvm_ffi_add_e2e.py
+)
+
+add_test(
   NAME libtriton-core-python-torch-dialect
   COMMAND ${CMAKE_COMMAND} -E env
     PYTHONPATH=${_libtriton_python_source_dir}:${_libtriton_core_python_package_dir}:${_mlir_python_package_dir}
@@ -31,6 +39,10 @@ add_test(
 
 set_tests_properties(libtriton-core-python-smoke PROPERTIES
   ENVIRONMENT "PYTHONPATH=${_libtriton_python_source_dir}:${_libtriton_core_python_package_dir}:${_mlir_python_package_dir}"
+)
+
+set_tests_properties(libtriton-core-python-tvm-ffi-add PROPERTIES
+  ENVIRONMENT "PYTHONPATH=${_libtriton_python_source_dir}:${_libtriton_core_python_package_dir}"
 )
 
 set_tests_properties(libtriton-core-python-torch-dialect PROPERTIES

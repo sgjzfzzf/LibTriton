@@ -25,9 +25,20 @@ declare_mlir_python_extension(LibTritonCorePythonExtensions.Torch
   MODULE_NAME _torchMlirCore
   ADD_TO_PARENT LibTritonCorePythonExtensions
   SOURCES
-    TorchMlirCoreModule.cpp
+    RegistrationModules.cpp
   EMBED_CAPI_LINK_LIBS
     TorchMLIRCAPI
+  PRIVATE_LINK_LIBS
+    LLVMSupport
+)
+
+declare_mlir_python_extension(LibTritonCorePythonExtensions.CoreRegister
+  MODULE_NAME _libtritonCore
+  ADD_TO_PARENT LibTritonCorePythonExtensions
+  SOURCES
+    RegistrationModules.cpp
+  EMBED_CAPI_LINK_LIBS
+    LibTritonCoreCAPI
   PRIVATE_LINK_LIBS
     LLVMSupport
 )
@@ -59,6 +70,7 @@ declare_mlir_python_sources(LibTritonCorePythonSources.Core
   ADD_TO_PARENT LibTritonCorePythonSources
   SOURCES
     __init__.py
+    capi_utils.py
 )
 
 declare_mlir_dialect_python_bindings(
@@ -100,27 +112,16 @@ build_nanobind_lib(
   MLIR_BINDINGS_PYTHON_NB_DOMAIN libtriton_core
 )
 
-add_mlir_python_extension(LibTritonCorePythonExtension
-  _libtritonCore
-  ${NB_LIBRARY_TARGET_NAME}
-  INSTALL_COMPONENT LibTritonCorePythonModules
-  INSTALL_DIR ${LIBTRITON_CORE_PYTHON_INSTALL_ROOT}
-  OUTPUT_DIRECTORY ${LIBTRITON_CORE_PYTHON_OUTPUT_ROOT}
-  MLIR_BINDINGS_PYTHON_NB_DOMAIN libtriton_core
-  SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/LibTritonCoreModule.cpp
-  LINK_LIBS PRIVATE
-    LibTritonCoreCAPI
-    MLIRCAPIIR
-    LLVMSupport
+install(TARGETS LibTritonCoreRuntime
+  LIBRARY DESTINATION ${LIBTRITON_CORE_PYTHON_INSTALL_ROOT}/_mlir_libs
+  COMPONENT LibTritonCorePythonModules
 )
-mlir_python_setup_extension_rpath(LibTritonCorePythonExtension)
 
 add_custom_target(LibTritonCorePythonModules ALL
   DEPENDS
+    LibTritonCoreRuntime
     LibTritonCoreMLIRPythonModules
     LibTritonCorePythonSourcesTarget
-    LibTritonCorePythonExtension
 )
 
 add_dependencies(LibTritonCorePythonModules TorchMLIRCAPI)

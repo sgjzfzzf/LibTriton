@@ -4,6 +4,11 @@ project(LibTriton)
 
 include(ExternalProject)
 
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+set(Python_EXECUTABLE ${Python3_EXECUTABLE})
+set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+
 ExternalProject_Add(
     llvm-project
     GIT_REPOSITORY https://github.com/llvm/llvm-project.git
@@ -23,6 +28,9 @@ ExternalProject_Add(
         -DLLVM_INCLUDE_UTILS=ON
         -DLLVM_INSTALL_UTILS=ON
         -DMLIR_ENABLE_BINDINGS_PYTHON=ON
+        -DPython3_EXECUTABLE=${Python3_EXECUTABLE}
+        -DPython_EXECUTABLE=${Python_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
         -DPython_FIND_VIRTUALENV=ONLY
         -DPython3_FIND_VIRTUALENV=ONLY
 )
@@ -45,6 +53,9 @@ ExternalProject_Add(
         -DLLVM_DIR=${CMAKE_BINARY_DIR}/install/llvm-project/lib/cmake/llvm
         -DMLIR_DIR=${CMAKE_BINARY_DIR}/install/llvm-project/lib/cmake/mlir
         -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"
+        -DPython3_EXECUTABLE=${Python3_EXECUTABLE}
+        -DPython_EXECUTABLE=${Python_EXECUTABLE}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
         -DPython_FIND_VIRTUALENV=ONLY
         -DPython3_FIND_VIRTUALENV=ONLY
 )

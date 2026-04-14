@@ -12,6 +12,7 @@ add_mlir_public_c_api_library(LibTritonCoreCAPI
   ENABLE_AGGREGATION
 
   LINK_LIBS PUBLIC
+  MLIRConvertToLLVMPass
   DLPackDialect
   DLPackToLLVM
   MemRefOriginAnalysis
