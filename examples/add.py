@@ -1,4 +1,4 @@
-from libtriton.core import triton_graph_backend
+from libtriton import triton_graph_backend
 import torch
 from torch._dynamo.backends.common import aot_autograd
 import triton
