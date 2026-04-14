@@ -4,7 +4,14 @@ from typing import Final
 import torch
 import tvm_ffi
 
-import libtriton_core
+from libtriton.core import (
+    capi_utils,
+    ir,
+    passmanager,
+    execution_engine,
+    register_all_dialects,
+    register_all_passes,
+)
 
 
 MLIR_FILE: Final[pathlib.Path] = (
@@ -13,12 +20,12 @@ MLIR_FILE: Final[pathlib.Path] = (
 TEST_FUNCTION: Final[str] = "tensor_add_kernel"
 
 
-def _lower_to_llvm_dialect() -> libtriton_core.ir.Module:
-    ctx = libtriton_core.ir.Context()
+def _lower_to_llvm_dialect() -> ir.Module:
+    ctx = ir.Context()
     with ctx:
-        libtriton_core.register_all_dialects(ctx)
-        libtriton_core.register_all_passes()
-        module = libtriton_core.ir.Module.parse(MLIR_FILE.read_text(encoding="utf-8"))
+        register_all_dialects(ctx)
+        register_all_passes()
+        module = ir.Module.parse(MLIR_FILE.read_text(encoding="utf-8"))
         pipeline = (
             "builtin.module("
             "emit-tvm-ffi-interface,"
@@ -30,16 +37,14 @@ def _lower_to_llvm_dialect() -> libtriton_core.ir.Module:
             "reconcile-unrealized-casts"
             ")"
         )
-        libtriton_core.passmanager.PassManager.parse(pipeline).run(module.operation)
+        passmanager.PassManager.parse(pipeline).run(module.operation)
         return module
 
 
-def _build_tvm_ffi_function(module: libtriton_core.ir.Module) -> tvm_ffi.Function:
-    engine = libtriton_core.execution_engine.ExecutionEngine(
+def _build_tvm_ffi_function(module: ir.Module) -> tvm_ffi.Function:
+    engine = execution_engine.ExecutionEngine(
         module,
-        shared_libs=[
-            libtriton_core.capi_utils.find_capi_runtime_library(libtriton_core.__file__)
-        ],
+        shared_libs=[capi_utils.find_capi_runtime_library()],
     )
     function_ptr = engine.raw_lookup(f"__tvm_ffi_{TEST_FUNCTION}")
     if function_ptr is None:

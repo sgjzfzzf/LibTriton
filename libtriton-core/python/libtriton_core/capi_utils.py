@@ -1,10 +1,18 @@
 import pathlib
+from typing import Final
 
-_RUNTIME_BASENAME = "libLibTritonCoreRuntime.so"
+_RUNTIME_BASENAME: Final[str] = "libLibTritonCoreRuntime.so"
 
 
-def find_capi_runtime_library(anchor_file: str | pathlib.Path) -> str:
-    runtime_path = pathlib.Path(anchor_file).resolve().with_name(_RUNTIME_BASENAME)
-    if not runtime_path.is_file():
-        raise RuntimeError(f"missing LibTriton Runtime library at {runtime_path}")
-    return str(runtime_path)
+def find_capi_runtime_library() -> str:
+    module_dir = pathlib.Path(__file__).resolve().parent
+    runtime_paths = sorted(
+        (path for path in module_dir.rglob(_RUNTIME_BASENAME) if path.is_file()),
+        key=lambda path: (len(path.parts), str(path)),
+    )
+    if not runtime_paths:
+        raise RuntimeError(
+            "missing LibTriton Runtime library under "
+            f"{module_dir} via glob '**/{_RUNTIME_BASENAME}'"
+        )
+    return str(runtime_paths[0])
