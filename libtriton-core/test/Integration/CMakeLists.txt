@@ -13,7 +13,8 @@ target_link_options(e2e-dlpack-runner-asan PRIVATE
 )
 
 target_link_libraries(e2e-dlpack-runner-asan PRIVATE
-  LibTritonCoreRuntime
+  LibTritonCoreRuntimeCPU
+  LibTritonCoreRuntimeCUDA
   tvm_ffi::shared
 )
 

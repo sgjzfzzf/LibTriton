@@ -1,5 +1,5 @@
 // RUN: libtriton-core-opt %s -emit-tvm-ffi-interface | FileCheck %s --check-prefix=CHECK-TVM-FFI
-// RUN: libtriton-core-opt %s -emit-tvm-ffi-interface -convert-to-llvm -reconcile-unrealized-casts | mlir-opt -finalize-memref-to-llvm -reconcile-unrealized-casts | FileCheck %s --check-prefix=CHECK-LLVM
+// RUN: libtriton-core-opt %s -emit-tvm-ffi-interface -convert-to-llvm -reconcile-unrealized-casts | mlir-opt -finalize-memref-to-llvm="use-generic-functions=1" -reconcile-unrealized-casts | FileCheck %s --check-prefix=CHECK-LLVM
 // CHECK-TVM-FFI-NOT: func.func @__tvm_ffi_plain
 // CHECK-TVM-FFI-LABEL: func.func @id_i64
 func.func @id_i64(%x: i64) -> i64 attributes {tvm_ffi.emit_tvm_ffi_interface} {

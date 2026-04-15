@@ -5,6 +5,7 @@ add_mlir_conversion_library(TVMFFIToLLVM
 	MLIRTVMFFIToLLVMPassIncGen
 
 	LINK_LIBS PUBLIC
+	MemRefOriginAnalysis
 	MLIRPass
 	TVMFFIDialect
 	tvm_ffi::header

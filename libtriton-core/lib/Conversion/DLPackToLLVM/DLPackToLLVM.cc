@@ -299,6 +299,9 @@ struct LowerFromMemRefOwnedOp
     mlir::TypedValue<mlir::LLVM::LLVMPointerType> dataPtr =
         mlir::cast<mlir::TypedValue<mlir::LLVM::LLVMPointerType>>(
             memDesc.alignedPtr(rewriter, loc));
+    mlir::TypedValue<mlir::LLVM::LLVMPointerType> allocatedPtr =
+        mlir::cast<mlir::TypedValue<mlir::LLVM::LLVMPointerType>>(
+            memDesc.allocatedPtr(rewriter, loc));
     mlir::TypedValue<mlir::IntegerType> elemOffset =
         mlir::cast<mlir::TypedValue<mlir::IntegerType>>(
             memDesc.offset(rewriter, loc));
@@ -375,9 +378,10 @@ struct LowerFromMemRefOwnedOp
             rewriter, loc, dlTensorTy, dataPtr, dlContext, ndimValue,
             dlDataType, shapeAlloca, stridesAlloca, byteOffsetValue);
 
+    // Preserve the original allocation base pointer so runtime deleters can
+    // free the correct address even when tensor data points to an aligned view.
     mlir::TypedValue<mlir::LLVM::LLVMPointerType> managerCtxValue =
-        mlir::cast<mlir::TypedValue<mlir::LLVM::LLVMPointerType>>(
-            mlir::LLVM::ZeroOp::create(rewriter, loc, ptrTy).getResult());
+        allocatedPtr;
     mlir::FailureOr<mlir::LLVM::LLVMFuncOp> deleterOrErr =
         getOrCreateDefaultManagedTensorDeleter(moduleOp, dlManagedTensorTy);
     if (mlir::failed(deleterOrErr))
