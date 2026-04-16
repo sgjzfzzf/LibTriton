@@ -24,8 +24,8 @@ set(MLIR_ENABLE_BINDINGS_PYTHON OFF CACHE BOOL "Disable torch-mlir internal Pyth
 
 FetchContent_Declare(
   torch-mlir
-  GIT_REPOSITORY https://github.com/sgjzfzzf/torch-mlir.git
-  GIT_TAG libtriton
+  GIT_REPOSITORY https://github.com/llvm/torch-mlir.git
+  GIT_TAG 68213efa76ab3944445b0a0d6073efe7b7b3d039
   GIT_SUBMODULES "externals/stablehlo"
 )
 FetchContent_MakeAvailable(torch-mlir)
