@@ -4,10 +4,14 @@ import pkgutil
 
 __path__ = pkgutil.extend_path(__path__, __name__)
 
-from .backend import triton_graph_backend  # noqa: E402
+from .backend import (  # noqa: E402
+    experimental_torch_mlir_execution_engine_backend,
+    triton_graph_backend,
+)
 from . import core
 
 __all__ = [
     "core",
+    "experimental_torch_mlir_execution_engine_backend",
     "triton_graph_backend",
 ]
