@@ -6,6 +6,10 @@ set(LIBTRITON_CORE_PYTHON_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libtriton_core")
 set(LIBTRITON_CORE_PYTHON_PACKAGES_DIR "${CMAKE_BINARY_DIR}/python_packages")
 set(LIBTRITON_CORE_PYTHON_INSTALL_ROOT "python_packages/${LIBTRITON_CORE_PYTHON_PACKAGE_NAME}/libtriton_core")
 set(LIBTRITON_CORE_PYTHON_OUTPUT_ROOT "${LIBTRITON_CORE_PYTHON_PACKAGES_DIR}/${LIBTRITON_CORE_PYTHON_PACKAGE_NAME}/libtriton_core")
+file(RELATIVE_PATH LIBTRITON_CORE_TORCH_MLIR_MODULE_SOURCE
+  "${CMAKE_CURRENT_SOURCE_DIR}"
+  "${torch-mlir_SOURCE_DIR}/python/TorchMLIRModule.cpp"
+)
 
 include_directories(${torch-mlir_SOURCE_DIR}/python)
 include_directories(${torch-mlir_SOURCE_DIR}/include)
@@ -22,10 +26,10 @@ set(LIBTRITON_CORE_MLIR_SOURCE_COMPONENTS
 declare_mlir_python_sources(LibTritonCorePythonExtensions)
 
 declare_mlir_python_extension(LibTritonCorePythonExtensions.Torch
-  MODULE_NAME _torchMlirCore
+  MODULE_NAME _torchMlir
   ADD_TO_PARENT LibTritonCorePythonExtensions
   SOURCES
-    RegistrationModules.cpp
+    ${LIBTRITON_CORE_TORCH_MLIR_MODULE_SOURCE}
   EMBED_CAPI_LINK_LIBS
     TorchMLIRCAPI
   PRIVATE_LINK_LIBS
@@ -36,7 +40,7 @@ declare_mlir_python_extension(LibTritonCorePythonExtensions.CoreRegister
   MODULE_NAME _libtritonCore
   ADD_TO_PARENT LibTritonCorePythonExtensions
   SOURCES
-    RegistrationModules.cpp
+    RegistrationModules.cc
   EMBED_CAPI_LINK_LIBS
     LibTritonCoreCAPI
   PRIVATE_LINK_LIBS
@@ -73,6 +77,15 @@ declare_mlir_python_sources(LibTritonCorePythonSources.Core
     capi_utils.py
 )
 
+declare_mlir_python_sources(LibTritonCorePythonSources.TorchMlirCompat
+  ROOT_DIR "${torch-mlir_SOURCE_DIR}/python/torch_mlir"
+  ADD_TO_PARENT LibTritonCorePythonSources
+  SOURCES
+    compiler_utils.py
+    dialects/torch/__init__.py
+    fx.py
+)
+
 declare_mlir_dialect_python_bindings(
   ADD_TO_PARENT LibTritonCorePythonSources.Core
   ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -89,8 +102,8 @@ declare_mlir_dialect_python_bindings(
 
 declare_mlir_dialect_python_bindings(
   ADD_TO_PARENT LibTritonCorePythonSources.Core
-  ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
-  TD_FILE dialects/TorchOpsPyBind.td
+  ROOT_DIR "${torch-mlir_SOURCE_DIR}/python/torch_mlir"
+  TD_FILE dialects/TorchBinding.td
   DIALECT_NAME torch
 )
 
@@ -103,17 +116,7 @@ add_mlir_python_sources_target(LibTritonCorePythonSourcesTarget
     LibTritonCorePythonSources.Core.dlpack.ops_gen
     LibTritonCorePythonSources.Core.torch.ops_gen
     LibTritonCorePythonSources.Core.tvm_ffi.ops_gen
-)
-
-# Add fx.py and compiler_utils.py from torch-mlir
-add_custom_command(TARGET LibTritonCorePythonSourcesTarget POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E create_symlink
-    "${torch-mlir_SOURCE_DIR}/python/torch_mlir/fx.py"
-    "${LIBTRITON_CORE_PYTHON_OUTPUT_ROOT}/fx.py"
-  COMMAND ${CMAKE_COMMAND} -E create_symlink
-    "${torch-mlir_SOURCE_DIR}/python/torch_mlir/compiler_utils.py"
-    "${LIBTRITON_CORE_PYTHON_OUTPUT_ROOT}/compiler_utils.py"
-  COMMENT "Adding torch-mlir Python modules (fx.py, compiler_utils.py)"
+    LibTritonCorePythonSources.TorchMlirCompat
 )
 
 build_nanobind_lib(
@@ -135,13 +138,6 @@ install(FILES "${_mlir_lib_dir}/libmlir_cuda_runtime.so"
   DESTINATION ${LIBTRITON_CORE_PYTHON_INSTALL_ROOT}/_runtime_libs
   COMPONENT LibTritonCorePythonModules
   OPTIONAL
-)
-
-install(FILES
-  "${torch-mlir_SOURCE_DIR}/python/torch_mlir/fx.py"
-  "${torch-mlir_SOURCE_DIR}/python/torch_mlir/compiler_utils.py"
-  DESTINATION ${LIBTRITON_CORE_PYTHON_INSTALL_ROOT}
-  COMPONENT LibTritonCorePythonModules
 )
 
 add_custom_target(LibTritonCorePythonModules ALL

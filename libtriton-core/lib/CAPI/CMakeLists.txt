@@ -1,10 +1,10 @@
 add_mlir_public_c_api_library(LibTritonCoreCAPI
-  Dialects.cpp
-  Registration.cpp
-  DLPackTypes.cpp
-  TVMFFITypes.cpp
-  DLPackOps.cpp
-  TVMFFIOps.cpp
+  Dialects.cc
+  Registration.cc
+  DLPackTypes.cc
+  TVMFFITypes.cc
+  DLPackOps.cc
+  TVMFFIOps.cc
 
   ADDITIONAL_HEADER_DIRS
   ${PROJECT_SOURCE_DIR}/include/libtriton-core-c/

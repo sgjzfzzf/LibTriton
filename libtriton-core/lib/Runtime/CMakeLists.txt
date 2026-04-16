@@ -1,6 +1,6 @@
 add_library(LibTritonCoreRuntimeCPU SHARED
   CPUMemRefRuntime.c
-  ExecutionEngineRuntimeExports.cpp
+  ExecutionEngineRuntimeExports.cc
 )
 
 target_link_libraries(LibTritonCoreRuntimeCPU PUBLIC
@@ -12,7 +12,7 @@ find_package(CUDAToolkit REQUIRED)
 
 add_library(LibTritonCoreRuntimeCUDA SHARED
   CUDAMemRefRuntime.c
-  ExecutionEngineRuntimeExports.cpp
+  ExecutionEngineRuntimeExports.cc
 )
 
 target_link_libraries(LibTritonCoreRuntimeCUDA PUBLIC
