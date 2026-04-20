@@ -11,6 +11,7 @@ def main() -> int:
     loader = unittest.defaultTestLoader
     suite = unittest.TestSuite()
     suite.addTests(loader.loadTestsFromName("test_torch_compile_execution_engine"))
+    suite.addTests(loader.loadTestsFromName("test_triton_add_kernel_cubin"))
     suite.addTests(loader.loadTestsFromName("test_tvm_ffi_add"))
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1
