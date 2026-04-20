@@ -5,12 +5,27 @@ import torch
 import triton
 import triton.language as tl
 
-from libtriton._C.libtriton_core import ir, register_all_dialects  # type: ignore[import-not-found]
-from libtriton._C.libtriton_core.dialects import arith  # type: ignore[import-not-found]
-from libtriton._C.libtriton_core.dialects import func  # type: ignore[import-not-found]
-from libtriton._C.libtriton_core.dialects import gpu  # type: ignore[import-not-found]
+from libtriton._C.libtriton_core import (
+    capi_utils,
+    execution_engine,
+    ir,
+    passmanager,
+    register_all_dialects,
+    register_all_passes,
+)  # type: ignore[import-not-found]
+from libtriton._C.libtriton_core.dialects import arith, func, gpu  # type: ignore[import-not-found]
 
 _BLOCK_SIZE: Final[int] = 1024
+_GPU_BINARY_TO_LLVM_PIPELINE: Final[str] = (
+    "builtin.module("
+    "convert-arith-to-llvm,"
+    "convert-index-to-llvm,"
+    "finalize-memref-to-llvm{use-generic-functions=1},"
+    "convert-func-to-llvm,"
+    "gpu-to-llvm,"
+    "reconcile-unrealized-casts"
+    ")"
+)
 
 
 @triton.jit
@@ -61,23 +76,13 @@ class TestTritonAddKernelCubin(unittest.TestCase):
         cls.dynamic_shared_memory_size = cls.compiled_kernel.metadata.shared
 
     def test_capture_cubin_from_add_kernel(self) -> None:
-        cubin = self.cubin
+        self.assertIsNotNone(self.cubin)
+        self.assertIsInstance(self.cubin, bytes)
+        self.assertGreater(len(self.cubin), 0)
+        self.assertEqual(self.cubin[:4], b"\x7fELF")
 
-        self.assertIsNotNone(cubin)
-        self.assertIsInstance(cubin, bytes)
-        self.assertGreater(len(cubin), 0)
-        self.assertEqual(cubin[:4], b"\x7fELF")
-
-    def test_build_mlir_gpu_launch_module_from_cubin(self) -> None:
-        cubin = self.cubin
-
-        self.assertIsNotNone(cubin)
-        self.assertIsInstance(cubin, bytes)
-        cubin_hex = cubin.hex()
-
-        ctx = ir.Context()
+    def _build_gpu_launch_module(self, ctx: ir.Context) -> ir.Module:
         with ctx, ir.Location.unknown():
-            register_all_dialects(ctx)
             module = ir.Module.create()
             module.operation.attributes["gpu.container_module"] = ir.UnitAttr.get()
             index_type = ir.IndexType.get()
@@ -85,8 +90,9 @@ class TestTritonAddKernelCubin(unittest.TestCase):
             f32 = ir.F32Type.get()
             memref_4096xf32 = ir.MemRefType.get([4096], f32)
 
+            cubin_mlir = "".join(f"\\{b:02X}" for b in self.cubin)
             gpu_object = ir.Attribute.parse(
-                f'#gpu.object<#nvvm.target<chip = "{self.gpu_chip}">, "{cubin_hex}">'
+                f'#gpu.object<#nvvm.target<chip = "{self.gpu_chip}">, "{cubin_mlir}">'
             )
             module.body.append(
                 ir.Operation.create(
@@ -120,24 +126,45 @@ class TestTritonAddKernelCubin(unittest.TestCase):
                 dynamic_shared_memory_size = arith.constant(
                     i32_type, self.dynamic_shared_memory_size
                 )
-
+                arg0, arg1, arg2 = entry.arguments
                 gpu.LaunchFuncOp(
                     kernel=[self.kernel_name, self.kernel_name],
                     grid_size=(grid_x, grid_y, grid_z),
                     block_size=(block_x, block_y, block_z),
-                    kernel_operands=[
-                        entry.arguments[0],
-                        entry.arguments[1],
-                        entry.arguments[2],
-                    ],
+                    kernel_operands=[arg0, arg1, arg2],
                     dynamic_shared_memory_size=dynamic_shared_memory_size,
                 )
                 func.ReturnOp([])
 
+        return module
+
+    def test_build_mlir_gpu_launch_module_from_cubin(self) -> None:
+        ctx = ir.Context()
+        register_all_dialects(ctx)
+        module = self._build_gpu_launch_module(ctx)
         module_text = f"{module}"
         self.assertIn("gpu.launch_func", module_text)
         self.assertIn("gpu.binary", module_text)
         self.assertIn(f"@{self.kernel_name}::@{self.kernel_name}", module_text)
+
+    def test_lower_gpu_launch_module_to_llvm_dialect(self) -> None:
+        ctx = ir.Context()
+        register_all_dialects(ctx)
+        module = self._build_gpu_launch_module(ctx)
+        with ctx:
+            register_all_passes()
+            passmanager.PassManager.parse(_GPU_BINARY_TO_LLVM_PIPELINE).run(
+                module.operation
+            )
+
+        shared_libs = [
+            capi_utils.find_capi_runtime_library("cuda"),
+            capi_utils.find_mlir_cuda_runtime_library(),
+        ]
+        engine = execution_engine.ExecutionEngine(module, shared_libs=shared_libs)
+        engine.initialize()
+        fn_ptr = engine.raw_lookup("launch_add_kernel")
+        self.assertIsNotNone(fn_ptr)
 
 
 if __name__ == "__main__":
