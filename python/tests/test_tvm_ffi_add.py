@@ -79,42 +79,26 @@ def _build_module(ctx: ir.Context) -> ir.Module:
     return module
 
 
-def _compile(runtime_type: str) -> tvm_ffi.Function:
+def _compile(runtime_type: str = "cpu") -> tvm_ffi.Function:
     ctx = ir.Context()
     with ctx:
         register_all_dialects(ctx)
         register_all_passes()
         module = _build_module(ctx)
-        passmanager.PassManager.parse(_CPU_PIPELINE).run(module.operation)
-        engine = execution_engine.ExecutionEngine(
-            module,
-            shared_libs=[capi_utils.find_capi_runtime_library(runtime_type)],
-        )
-        engine.initialize()
-        ptr = engine.raw_lookup(f"__tvm_ffi_{_TEST_FUNCTION}")
-        if ptr is None:
-            raise RuntimeError(f"symbol not found: __tvm_ffi_{_TEST_FUNCTION}")
-        return tvm_ffi.Function.__from_mlir_packed_safe_call__(
-            ptr, keep_alive_object=engine
-        )
 
-
-def _compile_cuda() -> tvm_ffi.Function:
-    major, minor = torch.cuda.get_device_capability()
-    pipeline = _CUDA_PIPELINE.format(chip=f"sm_{major}{minor}")
-    ctx = ir.Context()
-    with ctx:
-        register_all_dialects(ctx)
-        register_all_passes()
-        module = _build_module(ctx)
-        passmanager.PassManager.parse(pipeline).run(module.operation)
-        engine = execution_engine.ExecutionEngine(
-            module,
-            shared_libs=[
+        if runtime_type == "cuda":
+            major, minor = torch.cuda.get_device_capability()
+            pipeline = _CUDA_PIPELINE.format(chip=f"sm_{major}{minor}")
+            shared_libs = [
                 capi_utils.find_capi_runtime_library("cuda"),
                 capi_utils.find_mlir_cuda_runtime_library(),
-            ],
-        )
+            ]
+        else:
+            pipeline = _CPU_PIPELINE
+            shared_libs = [capi_utils.find_capi_runtime_library(runtime_type)]
+
+        passmanager.PassManager.parse(pipeline).run(module.operation)
+        engine = execution_engine.ExecutionEngine(module, shared_libs=shared_libs)
         engine.initialize()
         ptr = engine.raw_lookup(f"__tvm_ffi_{_TEST_FUNCTION}")
         if ptr is None:
@@ -145,7 +129,7 @@ class TestTVMFFIAddTorchCPU(unittest.TestCase):
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA not available")
 class TestTVMFFIAddTorchCUDA(unittest.TestCase):
     def test_add(self) -> None:
-        fn = _compile_cuda()
+        fn = _compile("cuda")
         lhs = torch.tensor([1, 2, 3, 4], dtype=torch.int64, device="cuda")
         rhs = torch.tensor([10, 20, 30, 40], dtype=torch.int64, device="cuda")
         out = torch.from_dlpack(fn(lhs, rhs))
