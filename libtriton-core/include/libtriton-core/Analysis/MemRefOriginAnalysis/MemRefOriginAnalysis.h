@@ -4,10 +4,7 @@
 #include "mlir/Analysis/DataFlow/SparseAnalysis.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Value.h"
-
-namespace llvm {
-class raw_ostream;
-}
+#include "llvm/Support/raw_ostream.h"
 
 namespace libtriton::analysis {
 

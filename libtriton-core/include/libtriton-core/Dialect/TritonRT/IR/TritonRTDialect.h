@@ -1,0 +1,8 @@
+#ifndef LIBTRITON_CORE_DIALECT_TRITONRT_IR_TRITONRTDIALECT_H_
+#define LIBTRITON_CORE_DIALECT_TRITONRT_IR_TRITONRTDIALECT_H_
+
+#include "mlir/IR/Dialect.h"
+
+#include "libtriton-core/Dialect/TritonRT/IR/TritonRTDialect.h.inc"
+
+#endif // LIBTRITON_CORE_DIALECT_TRITONRT_IR_TRITONRTDIALECT_H_

@@ -7,7 +7,7 @@ import torch
 import triton
 
 from libtriton._C.libtriton_core import ir
-from libtriton._C.libtriton_core.dialects import arith, func, gpu, llvm
+from libtriton._C.libtriton_core.dialects import arith, func
 from libtriton._C.libtriton_core.extras.fx_importer import FxImporter, GraphNodeImporter
 
 
@@ -73,22 +73,6 @@ class TritonGraphNodeImporter(GraphNodeImporter):
         else:
             raise ValueError(f"unsupported Triton runtime type: {triton_type}")
 
-    @staticmethod
-    def _cast_value(result_type: ir.Type, value: ir.Value, loc: Any) -> ir.Value:
-        if value.type == result_type:
-            return value
-        else:
-            return ir.Operation.create(
-                "builtin.unrealized_conversion_cast",
-                results=[result_type],
-                operands=[value],
-                loc=loc,
-            ).results[0]
-
-    @staticmethod
-    def _make_null_ptr() -> ir.Value:
-        return llvm.mlir_zero(ir.Type.parse("!llvm.ptr"))
-
     def _materialize_runtime_argument(
         self,
         loc: Any,
@@ -114,83 +98,6 @@ class TritonGraphNodeImporter(GraphNodeImporter):
                     )
         else:
             raise ValueError(f"missing Triton runtime argument: {name}")
-
-    def _build_wrapper_function(
-        self,
-        loc: Any,
-        fname: str,
-        binary_name: str,
-        kernel: triton.compiler.CompiledKernel,
-        runtime_parameters: List[Tuple[str, str]],
-        function_arguments: List[Tuple[str, ir.Type]],
-        grid: Tuple[int, int, int],
-        output_names: List[str],
-    ) -> ir.FunctionType:
-        function_arguments_by_name: Dict[str, ir.Type] = dict(function_arguments)
-        input_names: List[str] = [arg_name for arg_name, _ in runtime_parameters]
-        input_types: List[ir.Type] = [
-            function_arguments_by_name[arg_name] for arg_name in input_names
-        ]
-        result_types: List[ir.Type] = [
-            function_arguments_by_name[arg_name]
-            for arg_name in output_names
-            if arg_name in function_arguments_by_name
-        ]
-        fty = ir.FunctionType.get(input_types, result_types)
-        with loc:
-            func_op = func.FuncOp(
-                fname,
-                fty,
-                visibility="private",
-                ip=self.fx_importer._m_ip,
-            )
-            entry_block = ir.Block.create_at_start(func_op.body, fty.inputs)
-            with ir.InsertionPoint(entry_block):
-                index_type = ir.IndexType.get()
-                i32_type = ir.IntegerType.get_signless(32)
-                grid_x, grid_y, grid_z = grid
-                grid_x = arith.constant(index_type, grid_x)
-                grid_y = arith.constant(index_type, grid_y)
-                grid_z = arith.constant(index_type, grid_z)
-                block_x = arith.constant(
-                    index_type,
-                    kernel.metadata.num_warps * kernel.metadata.warp_size,
-                )
-                block_y = arith.constant(index_type, 1)
-                block_z = arith.constant(index_type, 1)
-                dynamic_smem = arith.constant(i32_type, kernel.metadata.shared)
-                entry_arguments: Dict[str, ir.Value] = dict(
-                    zip(input_names, entry_block.arguments)
-                )
-                kernel_operands: List[ir.Value] = [
-                    self._cast_value(
-                        self._triton_type_to_ir_type(triton_type),
-                        entry_arguments[arg_name],
-                        loc,
-                    )
-                    for arg_name, triton_type in runtime_parameters
-                ]
-                kernel_operands.extend(
-                    [
-                        self._make_null_ptr(),
-                        self._make_null_ptr(),
-                    ]
-                )
-                gpu.LaunchFuncOp(
-                    kernel=[binary_name, kernel.metadata.name],
-                    grid_size=(grid_x, grid_y, grid_z),
-                    block_size=(block_x, block_y, block_z),
-                    kernel_operands=kernel_operands,
-                    dynamic_shared_memory_size=dynamic_smem,
-                )
-                func.ReturnOp(
-                    [
-                        entry_arguments[arg_name]
-                        for arg_name in output_names
-                        if arg_name in entry_arguments
-                    ]
-                )
-        return fty
 
     def _import_hop_triton_kernel_wrapper_functional(
         self,
@@ -237,9 +144,6 @@ class TritonGraphNodeImporter(GraphNodeImporter):
             )
             for name, triton_type in runtime_parameters
         }
-        function_arguments: List[Tuple[str, ir.Type]] = [
-            (name, call_arguments[name].type) for name, _ in runtime_parameters
-        ]
         operands: List[ir.Value] = [
             call_arguments[name] for name, _ in runtime_parameters
         ]
@@ -247,29 +151,43 @@ class TritonGraphNodeImporter(GraphNodeImporter):
         fname: Final[str] = f"__triton_{node.name}"
         binary_name: Final[str] = f"{fname}_bin"
         self._add_gpu_binary(loc, self.fx_importer.module, binary_name, kernel)
-        fty = self._build_wrapper_function(
-            loc,
-            fname,
-            binary_name,
-            kernel,
-            runtime_parameters,
-            function_arguments,
-            grid,
-            output_names,
-        )
+        with loc:
+            index_type = ir.IndexType.get()
+            i32_type = ir.IntegerType.get_signless(32)
+            grid_x, grid_y, grid_z = grid
+            launch_operands: List[ir.Value] = [
+                arith.constant(index_type, grid_x),
+                arith.constant(index_type, grid_y),
+                arith.constant(index_type, grid_z),
+                arith.constant(
+                    index_type,
+                    kernel.metadata.num_warps * kernel.metadata.warp_size,
+                ),
+                arith.constant(index_type, 1),
+                arith.constant(index_type, 1),
+                arith.constant(i32_type, kernel.metadata.shared),
+                *operands,
+            ]
 
-        call: ir.Operation = ir.Operation.create(
-            "func.call",
-            attributes={"callee": ir.FlatSymbolRefAttr.get(fname)},
-            results=list(fty.results),
-            operands=operands,
-            loc=loc,
-        )
+            ir.Operation.create(
+                "triton_rt.triton_kernel_launch",
+                operands=launch_operands,
+                attributes={
+                    "kernel": ir.Attribute.parse(
+                        f"@{binary_name}::@{kernel.metadata.name}"
+                    ),
+                    "operandSegmentSizes": ir.Attribute.parse(
+                        f"array<i32: 1, 1, 1, 1, 1, 1, 1, {len(operands)}>"
+                    ),
+                },
+                loc=loc,
+            )
 
         self._multi_result_nodes.add(node)
 
-        for output_name, result in zip(output_names, call.results):
-            self.bind_node_value(node, result, output_name)
+        for output_name in output_names:
+            if output_name in call_arguments:
+                self.bind_node_value(node, call_arguments[output_name], output_name)
 
     @staticmethod
     def get_compiled_kernel(

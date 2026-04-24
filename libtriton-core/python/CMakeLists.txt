@@ -96,6 +96,13 @@ declare_mlir_dialect_python_bindings(
 declare_mlir_dialect_python_bindings(
   ADD_TO_PARENT LibTritonCorePythonSources.Core
   ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
+  TD_FILE dialects/TritonRTOpsPyBind.td
+  DIALECT_NAME triton_rt
+)
+
+declare_mlir_dialect_python_bindings(
+  ADD_TO_PARENT LibTritonCorePythonSources.Core
+  ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
   TD_FILE dialects/TVMFFIOpsPyBind.td
   DIALECT_NAME tvm_ffi
 )
@@ -114,6 +121,7 @@ add_mlir_python_sources_target(LibTritonCorePythonSourcesTarget
   SOURCES_TARGETS
     LibTritonCorePythonSources.Core
     LibTritonCorePythonSources.Core.dlpack.ops_gen
+    LibTritonCorePythonSources.Core.triton_rt.ops_gen
     LibTritonCorePythonSources.Core.torch.ops_gen
     LibTritonCorePythonSources.Core.tvm_ffi.ops_gen
     LibTritonCorePythonSources.TorchMlirCompat

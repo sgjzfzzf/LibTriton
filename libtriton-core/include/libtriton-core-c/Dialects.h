@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 MLIR_DECLARE_CAPI_DIALECT_REGISTRATION(DLPack, dlpack);
+MLIR_DECLARE_CAPI_DIALECT_REGISTRATION(TritonRT, triton_rt);
 MLIR_DECLARE_CAPI_DIALECT_REGISTRATION(TVMFFI, tvm_ffi);
 
 #ifdef __cplusplus

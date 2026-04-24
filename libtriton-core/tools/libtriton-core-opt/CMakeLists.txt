@@ -11,6 +11,7 @@ target_link_libraries(libtriton-core-opt PRIVATE
   DLPackToLLVM
   EmitTVMFFIInterface
   MemRefOriginAnalysis
+  TritonRTNormalizeOperands
   MLIRArithDialect
   MLIRConvertToLLVMPass
   MLIRControlFlowDialect
@@ -19,6 +20,8 @@ target_link_libraries(libtriton-core-opt PRIVATE
   MLIRMlirOptMain
   MLIRSCFDialect
   MLIRTransforms
+  TorchMLIRTorchConversionDialect
+  TritonRTDialect
   TVMFFIToLLVM
   TVMFFIDialect
 )

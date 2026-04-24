@@ -69,6 +69,7 @@ _TORCH_TO_LINALG_NO_VERIFY_PIPELINE: Final[str] = (
     "func.func(resolve-shaped-type-result-dims),"
     "func.func(cse),"
     "torch-func-backend-type-conversion,"
+    "func.func(tritonrt-normalize-operands),"
     "func.func(canonicalize),"
     "func.func(torch-finalizing-backend-type-conversion)"
     ")"
@@ -106,11 +107,10 @@ class TritonGraphModule(object):
             model_name="main",
             fx_importer=importer,
         )
-        # TODO: disable verifier for now
-        # with self.ctx:
-        #     passmanager.PassManager.parse(_TORCH_TO_LINALG_NO_VERIFY_PIPELINE).run(
-        #         module.operation
-        #     )
+        with self.ctx:
+            passmanager.PassManager.parse(_TORCH_TO_LINALG_NO_VERIFY_PIPELINE).run(
+                module.operation
+            )
         print(module)
         return self.gm
 

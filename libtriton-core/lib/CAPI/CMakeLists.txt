@@ -20,6 +20,9 @@ add_mlir_public_c_api_library(LibTritonCoreCAPI
   MLIRIR
   MLIRSupport
   TorchMLIRCAPI
+  TorchMLIRTorchConversionDialect
+  TritonRTNormalizeOperands
+  TritonRTDialect
   TVMFFIDialect
   TVMFFIToLLVM
 )
