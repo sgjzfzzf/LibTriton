@@ -18,9 +18,13 @@ from libtriton._C.libtriton_core import (
     register_all_dialects,
     register_all_passes,
 )
+from libtriton._C.libtriton_core.dialects import func
+from libtriton._C.libtriton_core.extras.fx_importer import (
+    FxImporter,
+    GraphNodeImporter,
+)
 
 from .kernel import KernelBuilder
-from .transform import triton_graph_transform
 
 _CPU_EXECUTION_ENGINE_PIPELINE: Final[str] = (
     "builtin.module("
@@ -58,55 +62,155 @@ _CUDA_EXECUTION_ENGINE_PIPELINE: Final[str] = (
     ")"
 )
 
+_TORCH_TO_LINALG_NO_VERIFY_PIPELINE: Final[str] = (
+    "builtin.module("
+    "func.func(torch-restructure-non-constant-axes),"
+    "func.func(torch-fuse-quantized-ops),"
+    "func.func(convert-torch-to-tmtensor{allow-non-finites=true}),"
+    "func.func(canonicalize),"
+    "func.func(convert-torch-to-linalg{allow-non-finites=true}),"
+    "func.func(canonicalize),"
+    "func.func(convert-torch-to-scf),"
+    "func.func(convert-torch-to-arith),"
+    "func.func(convert-torch-to-tensor),"
+    "convert-torch-conversion-to-mlprogram,"
+    "func.func(memref-expand),"
+    "func.func(canonicalize),"
+    "func.func(resolve-shaped-type-result-dims),"
+    "func.func(cse),"
+    "torch-func-backend-type-conversion,"
+    "func.func(canonicalize),"
+    "func.func(torch-finalizing-backend-type-conversion)"
+    ")"
+)
+
+
+class TritonGraphNodeImporter(GraphNodeImporter):
+    """GraphNodeImporter subclass that handles triton higher-order ops natively."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+
+    def _import_hop_triton_kernel_wrapper_functional(
+        self,
+        loc: Any,
+        node: torch.fx.Node,
+        hop: Any,
+    ) -> None:
+        # TODO: Extract kernel_idx from node.kwargs["kernel_idx"] to retrieve
+        # the JITFunction via kernel_side_table.get_kernel(kernel_idx), then
+        # use KernelBuilder to compile the kernel and build a GPU launch
+        # func, merging it into the parent module via the symbol table.
+        keyword_values: Dict[str, Any] = node.kwargs.get("kwargs", {})
+        imported_items = [
+            (name, self._import_argument(loc, value))
+            for name, value in keyword_values.items()
+        ]
+        operands = [value for _, value in imported_items]
+        operand_types = [value.type for value in operands]
+        imported_values = {name: value for name, value in imported_items}
+        output_names = node.kwargs.get("tensors_to_clone", [])
+
+        out_results = [
+            imported_values[name] for name in output_names if name in imported_values
+        ]
+        result_types = [value.type for value in out_results]
+
+        dummy_name = f"__triton_hop_dummy_{node.name}"
+        dummy_fty = ir.FunctionType.get(operand_types, result_types)
+        with loc:
+            func.FuncOp(
+                dummy_name,
+                dummy_fty,
+                visibility="private",
+                ip=self.fx_importer._m_ip,
+            )
+
+        call = ir.Operation.create(
+            "func.call",
+            attributes={"callee": ir.FlatSymbolRefAttr.get(dummy_name)},
+            results=result_types,
+            operands=operands,
+            loc=loc,
+        )
+
+        self._multi_result_nodes.add(node)
+
+        for output_name, result in zip(output_names, call.results):
+            self.bind_node_value(node, result, output_name)
+
+
+class TritonFxImporter(FxImporter):
+    """FxImporter subclass that uses TritonGraphNodeImporter for triton op support."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+
+    def import_stateless_graph(
+        self,
+        g: torch.fx.Graph,
+        *,
+        func_name: str = "main",
+        func_visibility: Optional[str] = None,
+        import_symbolic_shape_expressions: bool = False,
+    ) -> Any:
+        """Override to inject TritonGraphNodeImporter."""
+        ftype, loc = self._graph_to_function_meta(g)
+        with loc:
+            func_op = func.FuncOp(
+                func_name,
+                ftype,
+                ip=self._m_ip,
+                visibility=func_visibility,
+            )
+            entry_block = ir.Block.create_at_start(func_op.body, ftype.inputs)
+        node_importer = TritonGraphNodeImporter(
+            self,
+            self._c,
+            self._cc,
+            entry_block,
+        )
+        node_importer.import_nodes(
+            g.nodes,
+            import_symbolic_shape_expressions=import_symbolic_shape_expressions,
+        )
+        self.symbol_table.insert(func_op)
+        return func_op
+
 
 class TritonGraphModule(object):
-    """Wrapper around a transformed fx.GraphModule produced by triton_graph_backend."""
+    """Compiles a torch.fx.GraphModule containing triton ops via TritonFxImporter."""
 
     def __init__(self, gm: torch.fx.GraphModule, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self.gm: torch.fx.GraphModule = triton_graph_transform(gm)
+        self.gm: torch.fx.GraphModule = gm
         self.fn: Optional[Callable[..., Any]] = None
         self.ctx: ir.Context = ir.Context()
         register_all_dialects(self.ctx)
         register_all_passes()
 
     def __call__(self, *args: List[Any], **kwargs: Dict[Any, Any]) -> Any:
-        with triton_kernel_scope(self.gm) as scope:
-            if not self.fn:
-                result = self.gm(*args, **kwargs)
-                self.fn = self._build_fn(scope)
-                return result
-            else:
-                return self.fn(*args, **kwargs)
+        if not self.fn:
+            self.fn = self._build_fn()
+        return self.fn(*args, **kwargs)
 
-    def _build_fn(self, scope: KernelScope) -> Callable[..., Any]:
-        # TODO: this currently relies on the fact that the first call to the GraphModule will execute all kernels and thus trigger the hooks to capture the compiled kernels. We should ideally be able to capture the compiled kernels without relying on executing the GraphModule.
-        for name, child in self.gm.named_children():
-            if name.startswith("submod_torch_"):
-                fx_importer = fx.FxImporter(context=self.ctx)
-                module = fx.stateless_fx_import(
-                    child,
-                    output_type=compiler_utils.OutputType.LINALG_ON_TENSORS,
-                    model_name=name,
-                    fx_importer=fx_importer,
-                )
-                print(module)
-            elif name.startswith("submod_triton_"):
-                kernel: triton.compiler.CompiledKernel = scope.get_kernel(child)
-                [triton_kernel_wrapper] = [
-                    node
-                    for node in child.graph.nodes
-                    if node.op == "call_function"
-                    and isinstance(
-                        node.target,
-                        torch._higher_order_ops.triton_kernel_wrap.TritonKernelWrapperFunctional,
-                    )
-                ]
-                [grid] = triton_kernel_wrapper.kwargs["grid"]
-                module = KernelBuilder(kernel).build_gpu_launch_module(self.ctx, grid)
-                print(module)
-            else:
-                raise ValueError(f"unknown submodule type: {name}")
+    def _build_fn(self) -> Callable[..., Any]:
+        importer = TritonFxImporter(context=self.ctx)
+        # TODO: lower the resulting module and build an executable.
+        # For now import to Torch IR, then try a custom backend pipeline
+        # that mirrors torch-backend-to-linalg-on-tensors-backend-pipeline
+        # without the final backend-contract verifier.
+        module = fx.stateless_fx_import(
+            self.gm,
+            output_type=compiler_utils.OutputType.TORCH,
+            model_name="main",
+            fx_importer=importer,
+        )
+        with self.ctx:
+            passmanager.PassManager.parse(_TORCH_TO_LINALG_NO_VERIFY_PIPELINE).run(
+                module.operation
+            )
+        print(module)
         return self.gm
 
 
