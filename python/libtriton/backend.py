@@ -121,15 +121,12 @@ class TritonGraphModule(object):
     ) -> Callable[[Sequence[Any]], Tuple[Any, ...]]:
         engine: execution_engine.ExecutionEngine = execution_engine.ExecutionEngine(
             module,
-            shared_libs=[
-                capi_utils.find_capi_runtime_library("cuda"),
-                capi_utils.find_mlir_cuda_runtime_library(),
-            ],
+            shared_libs=capi_utils.find_runtime_libraries(),
         )
 
         engine.initialize()
         ptr: Callable[..., Any] = engine.raw_lookup(f"__tvm_ffi_{model_name}")
-        assert ptr, f"symbol not found: __tvm_ffi_{model_name}"
+        assert ptr is not None, f"symbol not found: __tvm_ffi_{model_name}"
         fn: Callable[..., Any] = tvm_ffi.Function.__from_mlir_packed_safe_call__(
             ptr, keep_alive_object=engine
         )

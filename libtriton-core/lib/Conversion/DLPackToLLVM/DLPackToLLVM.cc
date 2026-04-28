@@ -323,11 +323,11 @@ struct LowerFromMemRefOwnedOp
     if (!stridesAlloca)
       return mlir::failure();
 
-    // Build DLContext struct: {device_type = kCPU = 1, device_id = 0}
+    // Build DLContext struct: {device_type = kDLCUDA = 1, device_id = 0}
     mlir::TypedValue<mlir::IntegerType> deviceTypeValue =
         mlir::cast<mlir::TypedValue<mlir::IntegerType>>(
             mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty,
-                                           static_cast<std::int32_t>(kDLCPU))
+                                           static_cast<std::int32_t>(kDLCUDA))
                 .getResult());
     mlir::TypedValue<mlir::IntegerType> deviceIdValue =
         mlir::cast<mlir::TypedValue<mlir::IntegerType>>(
