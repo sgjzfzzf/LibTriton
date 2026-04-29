@@ -4,10 +4,10 @@ import pkgutil
 
 __path__ = pkgutil.extend_path(__path__, __name__)
 
-from .backend import (  # noqa: E402
-    triton_graph_backend,
+from .compile import (  # noqa: E402
+    compile,
 )
 
 __all__ = [
-    "triton_graph_backend",
+    "compile",
 ]

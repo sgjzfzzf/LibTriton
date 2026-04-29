@@ -6,13 +6,9 @@ from typing import (
     Final,
     List,
     Optional,
-    Sequence,
-    Tuple,
-    TYPE_CHECKING,
 )
 
 import torch
-import torch._dynamo.backends.common
 import tvm_ffi
 
 from libtriton._C.libtriton_core import (
@@ -26,9 +22,6 @@ from libtriton._C.libtriton_core import (
     register_all_passes,
 )
 from .importer import TritonFxImporter
-
-if TYPE_CHECKING:
-    import triton
 
 _PIPELINE: Final[str] = (
     "builtin.module("
@@ -70,46 +63,51 @@ class TritonGraphModule(object):
     """Compiles a torch.fx.GraphModule containing triton ops via TritonFxImporter."""
 
     def __init__(
-        self, gm: torch.fx.GraphModule, *args: List[Any], **kwargs: Dict[str, Any]
+        self, fn: Callable[..., Any], *args: List[Any], **kwargs: Dict[str, Any]
     ) -> None:
         super().__init__(*args, **kwargs)
-        self.gm: Final[torch.fx.GraphModule] = gm
-        self.fn: Optional[Callable[..., Any]] = None
+        self.fn: Final[Callable[..., Any]] = fn
+        self.gm: Optional[torch.fx.GraphModule] = None
+        self.executor: Optional[Callable[..., Any]] = None
         self.ctx: ir.Context = ir.Context()
         register_all_dialects(self.ctx)
         register_all_passes()
 
     def __call__(self, *args: List[Any], **kwargs: Dict[str, Any]) -> Any:
-        if self.fn:
-            return self.fn(*args, **kwargs)
+        if self.executor:
+            return self.executor(*args, **kwargs)
         else:
-            ret: triton.KernelInterface = self.gm(*args, **kwargs)
-            self.fn = self._build_fn(*args)
-            return ret
+            return self.compile(*args, **kwargs)
 
-    def _build_fn(self, *example_inputs: Any) -> Callable[..., Any]:
-        model_name = "main"
+    def compile(self, *args: List[Any], **kwargs: Dict[str, Any]) -> Any:
+        ret: Any = self.fn(*args, **kwargs)
+        if self.gm is None:
+            self.gm, _ = torch._dynamo.export(
+                self.fn, aten_graph=True, assume_static_by_default=True
+            )(*args, **kwargs)
+        self.executor = self._build_fn()
+        return ret
+
+    def _build_fn(self) -> Callable[..., Any]:
         importer = TritonFxImporter(context=self.ctx)
         module: ir.Module = fx.stateless_fx_import(
             self.gm,
             output_type=compiler_utils.OutputType.TORCH,
-            model_name=model_name,
+            model_name=self.fn.__name__,
             fx_importer=importer,
         )
         with self.ctx:
-            TritonGraphModule._mark_for_tvm_ffi_interface(module, model_name)
+            TritonGraphModule._mark_for_tvm_ffi_interface(module, self.fn.__name__)
             major, minor = torch.cuda.get_device_capability()
             pipeline = _PIPELINE.format(chip=f"sm_{major}{minor}")
             passmanager.PassManager.parse(pipeline).run(module.operation)
             return TritonGraphModule._build_execution_engine_callable(
                 module,
-                model_name=model_name,
+                model_name=self.fn.__name__,
             )
 
     @staticmethod
-    def _mark_for_tvm_ffi_interface(
-        module: ir.Module, model_name: str = "main"
-    ) -> None:
+    def _mark_for_tvm_ffi_interface(module: ir.Module, model_name: str) -> None:
         for op in module.body.operations:
             if (
                 "sym_name" in op.attributes
@@ -118,9 +116,17 @@ class TritonGraphModule(object):
                 op.attributes["tvm_ffi.emit_tvm_ffi_interface"] = ir.UnitAttr.get()
 
     @staticmethod
+    def _canonicalize_ret(val: Any) -> Any:
+        return (
+            torch.from_dlpack(val)
+            if hasattr(val, "__dlpack__") and not isinstance(val, torch.Tensor)
+            else val
+        )
+
+    @staticmethod
     def _build_execution_engine_callable(
         module: ir.Module, model_name: str
-    ) -> Callable[[Sequence[Any]], Tuple[Any, ...]]:
+    ) -> Callable[..., Any]:
         engine: execution_engine.ExecutionEngine = execution_engine.ExecutionEngine(
             module,
             shared_libs=capi_utils.find_runtime_libraries(),
@@ -133,34 +139,13 @@ class TritonGraphModule(object):
             ptr, keep_alive_object=engine
         )
 
-        def f(*args: Sequence[Any]) -> Tuple[Any, ...]:
+        def f(*args: List[Any]) -> Any:
             result = fn(*args)
-            if isinstance(result, tuple):
-                values = result
-            elif isinstance(result, list):
-                values = tuple(result)
+            if isinstance(result, (list, tuple)):
+                return tuple(
+                    TritonGraphModule._canonicalize_ret(value) for value in result
+                )
             else:
-                values = (result,)
-
-            return tuple(
-                torch.from_dlpack(value)
-                if hasattr(value, "__dlpack__") and not isinstance(value, torch.Tensor)
-                else value
-                for value in values
-            )
+                return TritonGraphModule._canonicalize_ret(result)
 
         return f
-
-
-def triton_graph_backend(
-    gm: torch.fx.GraphModule, example_inputs: List[Any]
-) -> Callable[..., Any]:
-    return torch._dynamo.backends.common.aot_autograd(
-        fw_compiler=triton_fw_compiler_impl
-    )(gm, example_inputs)
-
-
-def triton_fw_compiler_impl(
-    gm: torch.fx.GraphModule, example_inputs: List[Any]
-) -> TritonGraphModule:
-    return TritonGraphModule(gm)

@@ -1,4 +1,4 @@
-from libtriton import triton_graph_backend
+import libtriton
 import torch
 import triton
 import triton.language as tl
@@ -24,7 +24,6 @@ def add_kernel(
     tl.store(output_ptr + offsets, output, mask=mask)
 
 
-@torch.compile(backend=triton_graph_backend)
 def add(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     output: torch.Tensor = torch.empty_like(x)
     assert x.device == DEVICE and y.device == DEVICE and output.device == DEVICE
@@ -42,9 +41,6 @@ if __name__ == "__main__":
     x = torch.rand(size, device=DEVICE)
     y = torch.rand(size, device=DEVICE)
     output_torch = x + y
-    for _ in range(5):
-        # warmup
-        add(x, y)
-    output_triton = add(x, y)
-    # TODO: a known issue is that `output_triton` will show its device as `cpu` when it's actually on `cuda`. This is because tvm_ffi assign the wrong device type to it.
+    f = libtriton.compile(add, x, y)
+    output_triton = f(x, y)
     torch.testing.assert_close(output_triton.cpu(), output_torch.cpu())

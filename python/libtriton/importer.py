@@ -99,7 +99,7 @@ class TritonGraphNodeImporter(GraphNodeImporter):
         else:
             raise ValueError(f"missing Triton runtime argument: {name}")
 
-    def _import_hop_triton_kernel_wrapper_functional(
+    def _import_hop_triton_kernel_wrapper_mutation(
         self,
         loc: Any,
         node: torch.fx.Node,
@@ -131,8 +131,9 @@ class TritonGraphNodeImporter(GraphNodeImporter):
             [],
             ktensors | constant_args,
         )
-        if kernel is None:
-            raise ValueError(f"failed to get compiled Triton kernel for {node.name}")
+        assert kernel is not None, (
+            f"failed to get compiled Triton kernel for {node.name}"
+        )
         runtime_parameters: List[Tuple[str, str]] = self._runtime_parameters(kernel)
         call_arguments: Dict[str, ir.Value] = {
             name: self._materialize_runtime_argument(
