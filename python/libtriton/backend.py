@@ -23,41 +23,6 @@ from libtriton._C.libtriton_core import (
 )
 from .importer import TritonFxImporter
 
-_PIPELINE: Final[str] = (
-    "builtin.module("
-    "func.func(torch-restructure-non-constant-axes),"
-    "func.func(torch-fuse-quantized-ops),"
-    "func.func(convert-torch-to-tmtensor{{allow-non-finites=true}}),"
-    "func.func(convert-torch-to-linalg{{allow-non-finites=true}}),"
-    "func.func(convert-torch-to-scf),"
-    "func.func(convert-torch-to-arith),"
-    "func.func(convert-torch-to-tensor),"
-    "convert-torch-conversion-to-mlprogram,"
-    "torch-func-backend-type-conversion,"
-    "func.func(torchext-normalize-operands),"
-    "func.func(torch-finalizing-backend-type-conversion),"
-    "one-shot-bufferize{{bufferize-function-boundaries=1 function-boundary-type-conversion=identity-layout-map}},"
-    "emit-tvm-ffi-interface,"
-    "convert-linalg-to-parallel-loops,"
-    "func.func(gpu-map-parallel-loops),"
-    "convert-parallel-loops-to-gpu,"
-    "gpu-kernel-outlining,"
-    "finalize-memref-to-llvm{{use-generic-functions=1}},"
-    "nvvm-attach-target{{O=3 chip={chip}}},"
-    "gpu.module(convert-gpu-to-nvvm{{index-bitwidth=64}}),"
-    "convert-arith-to-llvm,"
-    "convert-torchext-to-llvm,"
-    "gpu-to-llvm,"
-    "torchext-async-kernel-launch,"
-    "convert-torchext-to-llvm,"
-    "gpu-module-to-binary{{format=fatbin}},"
-    "convert-func-to-llvm,"
-    "func.func(canonicalize),"
-    "func.func(cse),"
-    "reconcile-unrealized-casts"
-    ")"
-)
-
 
 class TritonGraphModule(object):
     """Compiles a torch.fx.GraphModule containing triton ops via TritonFxImporter."""
@@ -99,29 +64,12 @@ class TritonGraphModule(object):
         with self.ctx:
             TritonGraphModule._mark_for_tvm_ffi_interface(module, self.fn.__name__)
             major, minor = torch.cuda.get_device_capability()
-            pipeline = _PIPELINE.format(chip=f"sm_{major}{minor}")
+            pipeline = TritonGraphModule._build_pipeline(chip=f"sm_{major}{minor}")
             passmanager.PassManager.parse(pipeline).run(module.operation)
             return TritonGraphModule._build_execution_engine_callable(
                 module,
                 model_name=self.fn.__name__,
             )
-
-    @staticmethod
-    def _mark_for_tvm_ffi_interface(module: ir.Module, model_name: str) -> None:
-        for op in module.body.operations:
-            if (
-                "sym_name" in op.attributes
-                and ir.StringAttr(op.attributes["sym_name"]).value == model_name
-            ):
-                op.attributes["tvm_ffi.emit_tvm_ffi_interface"] = ir.UnitAttr.get()
-
-    @staticmethod
-    def _canonicalize_ret(val: Any) -> Any:
-        return (
-            torch.from_dlpack(val)
-            if hasattr(val, "__dlpack__") and not isinstance(val, torch.Tensor)
-            else val
-        )
 
     @staticmethod
     def _build_execution_engine_callable(
@@ -149,3 +97,56 @@ class TritonGraphModule(object):
                 return TritonGraphModule._canonicalize_ret(result)
 
         return f
+
+    @staticmethod
+    def _build_pipeline(chip: str) -> str:
+        passes: List[str] = [
+            "func.func(torch-restructure-non-constant-axes)",
+            "func.func(torch-fuse-quantized-ops)",
+            "func.func(convert-torch-to-tmtensor{allow-non-finites=true})",
+            "func.func(convert-torch-to-linalg{allow-non-finites=true})",
+            "func.func(convert-torch-to-scf)",
+            "func.func(convert-torch-to-arith)",
+            "func.func(convert-torch-to-tensor)",
+            "convert-torch-conversion-to-mlprogram",
+            "torch-func-backend-type-conversion",
+            "func.func(torchext-normalize-operands)",
+            "func.func(torch-finalizing-backend-type-conversion)",
+            "one-shot-bufferize{bufferize-function-boundaries=1 function-boundary-type-conversion=identity-layout-map}",
+            "emit-tvm-ffi-interface",
+            "convert-linalg-to-parallel-loops",
+            "func.func(gpu-map-parallel-loops)",
+            "convert-parallel-loops-to-gpu",
+            "gpu-kernel-outlining",
+            "finalize-memref-to-llvm{use-generic-functions=1}",
+            f"nvvm-attach-target{{O=3 chip={chip}}}",
+            "gpu.module(convert-gpu-to-nvvm{index-bitwidth=64})",
+            "convert-arith-to-llvm",
+            "convert-torchext-to-llvm",
+            "gpu-to-llvm",
+            "torchext-async-kernel-launch",
+            "convert-torchext-to-llvm",
+            "gpu-module-to-binary{format=fatbin}",
+            "convert-func-to-llvm",
+            "func.func(canonicalize)",
+            "func.func(cse)",
+            "reconcile-unrealized-casts",
+        ]
+        return "builtin.module({})".format(", ".join(passes))
+
+    @staticmethod
+    def _canonicalize_ret(val: Any) -> Any:
+        return (
+            torch.from_dlpack(val)
+            if hasattr(val, "__dlpack__") and not isinstance(val, torch.Tensor)
+            else val
+        )
+
+    @staticmethod
+    def _mark_for_tvm_ffi_interface(module: ir.Module, model_name: str) -> None:
+        for op in module.body.operations:
+            if (
+                "sym_name" in op.attributes
+                and ir.StringAttr(op.attributes["sym_name"]).value == model_name
+            ):
+                op.attributes["tvm_ffi.emit_tvm_ffi_interface"] = ir.UnitAttr.get()
