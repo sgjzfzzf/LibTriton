@@ -10,6 +10,7 @@ from typing import (
 
 import torch
 import tvm_ffi
+import libtriton._C.libtriton_core.dialects.transform.interpreter as transform_interpreter
 
 from libtriton._C.libtriton_core import (
     capi_utils,
@@ -44,6 +45,7 @@ class TritonGraphModule(object):
         self.ctx: ir.Context = ir.Context()
         register_all_dialects(self.ctx)
         register_all_passes()
+        self.importer: TritonFxImporter = TritonFxImporter(context=self.ctx)
 
     @property
     def _kind_value(self) -> str:
@@ -97,35 +99,24 @@ class TritonGraphModule(object):
     def compile(self, *args: Any, **kwargs: Any) -> Any:
         ret: Any = self.fn(*args, **kwargs)
         if self.executor is None:
-            gm, guards = torch._dynamo.export(
+            gm, gs = torch._dynamo.export(
                 self.fn, aten_graph=True, assume_static_by_default=True
             )(*args, **kwargs)
-            parsed_guards_set: Guards = TritonGraphModule._parser.parse_guards(guards)
-            # TODO: Build the actual IR module from the fx.GraphModule once the importer supports all necessary ops.
-            self.guard_to_fx_map[parsed_guards_set] = self._build_ir_module(gm)
-            module: ir.Module = self._build_stub_ir_module()
+            guards: Guards = TritonGraphModule._parser.parse_guards(gs)
+            self.guard_to_fx_map[guards] = fx.stateless_fx_import(
+                gm,
+                output_type=compiler_utils.OutputType.TORCH,
+                model_name=self.fn.__name__,
+                fx_importer=self.importer,
+            )
+            module: ir.Module = self._build_ir_module()
             self.executor = TritonGraphModule._build_execution_engine_callable(
                 module,
-                model_name=self.fn.__name__,
+                model_name=f"{self.fn.__name__}",
             )
         return ret
 
-    def _build_ir_module(self, gm: torch.fx.GraphModule) -> ir.Module:
-        importer: TritonFxImporter = TritonFxImporter(context=self.ctx)
-        module: ir.Module = fx.stateless_fx_import(
-            gm,
-            output_type=compiler_utils.OutputType.TORCH,
-            model_name=self.fn.__name__,
-            fx_importer=importer,
-        )
-        with self.ctx:
-            TritonGraphModule._mark_for_tvm_ffi_interface(module, self.fn.__name__)
-            major, minor = torch.cuda.get_device_capability()
-            pipeline = TritonGraphModule._build_pipeline(chip=f"sm_{major}{minor}")
-            passmanager.PassManager.parse(pipeline).run(module.operation)
-        return module
-
-    def _build_stub_ir_module(self) -> ir.Module:
+    def _build_ir_module(self) -> ir.Module:
         """Build a stub IR module with a TVM-FFI compatible wrapper that returns -1.
 
         This creates an IR module containing a single wrapper function with the TVM-FFI
@@ -134,6 +125,11 @@ class TritonGraphModule(object):
         """
         with self.ctx, ir.Location.unknown():
             module: ir.Module = ir.Module.create()
+            module.operation.attributes["gpu.container_module"] = ir.UnitAttr.get()
+            for imported_module in self.guard_to_fx_map.values():
+                transform_interpreter.copy_symbols_and_merge_into(
+                    module, imported_module
+                )
             with ir.InsertionPoint(module.body):
                 llvm.GlobalOp(
                     self._kind_str_ty,
@@ -165,8 +161,7 @@ class TritonGraphModule(object):
                         "tvm_ffi.error_set_raised_from_c_str",
                         operands=[kind_ptr, message_ptr],
                     )
-                    const_minus_one: ir.Value = arith.constant(self._i32_type, -1)
-                    func.return_([const_minus_one])
+                    func.return_([arith.constant(self._i32_type, -1)])
             major, minor = torch.cuda.get_device_capability()
             pipeline = TritonGraphModule._build_pipeline(chip=f"sm_{major}{minor}")
             passmanager.PassManager.parse(pipeline).run(module.operation)
