@@ -16,46 +16,41 @@ class TVMFFI_Op<string mnemonic, list<Trait> traits = []>
 def TVMFFI_ToOp : TVMFFI_Op<"to", [MemoryEffects<[MemRead]>]> {
   let summary = "Convert values across the TVMFFI bridge type set";
   let description = [{
-    Performs type -
-        directed conversion between TVMFFI boundary types.Supported types
-    are: integer types,
-    f64,
-    !llvm.ptr,
-    !tvm_ffi.any,
-    !tvm_ffi.object_handle,
-    and !dlpack.tensor
-        .The concrete lowering is selected from input and output types.
+    Performs type-directed conversion between TVMFFI boundary types. Supported
+    types are: integer types, f64, !llvm.ptr, !tvm_ffi.any,
+    !tvm_ffi.object_handle, and !dlpack.tensor. The concrete lowering is
+    selected from input and output types.
   }];
   let arguments = (ins AnyType : $input);
   let results = (outs AnyType : $output);
   let hasVerifier = 1;
 }
 
-def TVMFFI_AnyFromLLVMOp : TVMFFI_Op<"any_from_llvm", [Pure]> {
-  let summary = "Convert an LLVM TVMFFIAny descriptor struct to !tvm_ffi.any";
-  let description = [{Bridges an LLVM struct value carrying the TVMFFIAny ABI
-                      into !tvm_ffi.any for high-level unboxing operations.
+def TVMFFI_AsOp : TVMFFI_Op<"as", [Pure]> {
+  let summary = "Convert between !tvm_ffi.any and its LLVM descriptor struct";
+  let description = [{
+    Bridges !tvm_ffi.any and the LLVM struct value carrying the TVMFFIAny ABI
+    in either direction.
   }];
-  let arguments = (ins LLVM_AnyStruct : $input);
-  let results = (outs TVMFFI_AnyType : $output);
+  let arguments = (ins AnyTypeOf<[TVMFFI_AnyType, LLVM_AnyStruct]> : $input);
+  let results = (outs AnyTypeOf<[TVMFFI_AnyType, LLVM_AnyStruct]> : $output);
+  let hasVerifier = 1;
 }
 
-def TVMFFI_AnyToLLVMOp : TVMFFI_Op<"any_to_llvm", [Pure]> {
-  let summary = "Convert !tvm_ffi.any to its LLVM TVMFFIAny descriptor struct";
-  let description = [{Bridges !tvm_ffi.any to the LLVM struct value carrying
-                      the TVMFFIAny ABI for low-level stores and calls.
-  }];
+def TVMFFI_GetTypeIndexOp : TVMFFI_Op<"get_type_index", [Pure]> {
+  let summary = "Extract the TVMFFIAny type index as i32";
+  let description = [{Returns the type tag stored in a !tvm_ffi.any value.}];
   let arguments = (ins TVMFFI_AnyType : $input);
-  let results = (outs LLVM_AnyStruct : $output);
+  let results = (outs I32 : $output);
 }
 
 def TVMFFI_TensorFromDLPackOp
     : TVMFFI_Op<"tensor_from_dlpack", [MemoryEffects<[MemRead, MemWrite]>]> {
   let summary = "Call TVMFFITensorFromDLPack and return object handle";
   let description = [{
-    Models `TVMFFITensorFromDLPack(from, require_alignment, require_contiguous,
-    out)` with `out` materialized by lowering. The op returns the produced
-    TVMFFIObjectHandle directly.
+    Models `TVMFFITensorFromDLPack(from, require_alignment,
+    require_contiguous, out)` with `out` materialized by lowering. The op
+    returns the produced TVMFFIObjectHandle directly.
   }];
   let arguments = (ins DLPack_DLManagedTensor
                    : $from, I32

@@ -328,16 +328,16 @@ struct LowerToOp : public mlir::OpConversionPattern<libtriton::tvm_ffi::ToOp> {
   }
 };
 
-struct LowerAnyFromLLVMOp
-    : public mlir::OpConversionPattern<libtriton::tvm_ffi::AnyFromLLVMOp> {
+struct LowerAsOp : public mlir::OpConversionPattern<libtriton::tvm_ffi::AsOp> {
   using OpConversionPattern::OpConversionPattern;
 
   mlir::LogicalResult
-  matchAndRewrite(libtriton::tvm_ffi::AnyFromLLVMOp op, OpAdaptor adaptor,
+  matchAndRewrite(libtriton::tvm_ffi::AsOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
-    mlir::Type convertedAnyType =
+    mlir::Type convertedOutputType =
         getTypeConverter()->convertType(op.getOutput().getType());
-    if (!convertedAnyType || adaptor.getInput().getType() != convertedAnyType) {
+    if (!convertedOutputType ||
+        adaptor.getInput().getType() != convertedOutputType) {
       return mlir::failure();
     } else {
       rewriter.replaceOp(op, adaptor.getInput());
@@ -346,19 +346,19 @@ struct LowerAnyFromLLVMOp
   }
 };
 
-struct LowerAnyToLLVMOp
-    : public mlir::OpConversionPattern<libtriton::tvm_ffi::AnyToLLVMOp> {
+struct LowerGetTypeIndexOp
+    : public mlir::OpConversionPattern<libtriton::tvm_ffi::GetTypeIndexOp> {
   using OpConversionPattern::OpConversionPattern;
 
   mlir::LogicalResult
-  matchAndRewrite(libtriton::tvm_ffi::AnyToLLVMOp op, OpAdaptor adaptor,
+  matchAndRewrite(libtriton::tvm_ffi::GetTypeIndexOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
-    if (adaptor.getInput().getType() != op.getOutput().getType()) {
-      return mlir::failure();
-    } else {
-      rewriter.replaceOp(op, adaptor.getInput());
-      return mlir::success();
-    }
+    const mlir::Location loc = op.getLoc();
+    const libtriton::conversion::utils::TVMFFIAnyLLVMDescriptor anyValue =
+        libtriton::conversion::utils::TVMFFIAnyLLVMDescriptor::from(
+            adaptor.getInput());
+    rewriter.replaceOp(op, anyValue.typeIndex(rewriter, loc));
+    return mlir::success();
   }
 };
 
@@ -458,9 +458,9 @@ void populateTVMFFIToLLVMConversionPatterns(
     return libtriton::conversion::utils::TVMFFIObjectHandleLLVMDescriptor::
         getLLVMType(type.getContext());
   });
-  patterns.add<LowerToOp, LowerTensorFromDLPackOp, LowerAnyFromLLVMOp,
-               LowerAnyToLLVMOp, LowerErrorSetRaisedFromCStrOp>(typeConverter,
-                                                                context);
+  patterns.add<LowerGetTypeIndexOp, LowerToOp, LowerTensorFromDLPackOp,
+               LowerAsOp, LowerErrorSetRaisedFromCStrOp>(typeConverter,
+                                                         context);
   target.addIllegalDialect<libtriton::tvm_ffi::TVMFFIDialect>();
 }
 

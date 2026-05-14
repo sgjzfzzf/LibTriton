@@ -5,7 +5,6 @@
 #include "libtriton-core/Conversion/TorchExtToLLVM/TorchExtToLLVM.h"
 #include "libtriton-core/Dialect/DLPack/IR/DLPackDialect.h"
 #include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIDialect.h"
-#include "libtriton-core/Dialect/TVMFFI/Transforms/Passes.h"
 #include "libtriton-core/Dialect/TorchExt/IR/TorchExtDialect.h"
 #include "libtriton-core/Dialect/TorchExt/Transforms/BufferizableOpInterfaceImpl.h"
 #include "libtriton-core/Dialect/TorchExt/Transforms/TorchExtAsyncKernelLaunch.h"
@@ -43,7 +42,6 @@ void libtritonCoreRegisterAllDialects(MlirContext context) {
 
 void libtritonCoreRegisterAllPasses(void) {
   libtriton::dlpack::registerConvertDLPackToLLVMPass();
-  libtriton::tvm_ffi::registerEmitTVMFFIInterfacePass();
   libtriton::torch_ext::registerConvertTorchExtToLLVMPass();
   libtriton::torch_ext::registerAsyncKernelLaunchPass();
   libtriton::torch_ext::registerNormalizeTorchExtOperandsPass();

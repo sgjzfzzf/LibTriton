@@ -184,7 +184,7 @@ class TritonGraphModule(object):
             None,
         ).result
         any_value_llvm: ir.Value = llvm.LoadOp(self._any_llvm_type, arg_slot_ptr).result
-        return tvm_ffi_d.AnyFromLLVMOp(self._any_type, any_value_llvm).output
+        return tvm_ffi_d.as_(self._any_type, any_value_llvm)
 
     def _emit_unbox_any_arg(
         self,
@@ -249,7 +249,7 @@ class TritonGraphModule(object):
             boxed = tvm_ffi_d.ToOp(self._any_type, handle).output
         else:
             boxed = tvm_ffi_d.ToOp(self._any_type, value).output
-        boxed_llvm: ir.Value = tvm_ffi_d.AnyToLLVMOp(self._any_llvm_type, boxed).output
+        boxed_llvm: ir.Value = tvm_ffi_d.as_(self._any_llvm_type, boxed)
         llvm.StoreOp(boxed_llvm, packed_result_ptr)
 
     def _emit_dispatch_call(

@@ -7,7 +7,6 @@ target_link_libraries(
   libtriton-core-opt
   PRIVATE DLPackDialect
           DLPackToLLVM
-          EmitTVMFFIInterface
           MemRefOriginAnalysis
           TorchExtToLLVM
           TorchExtAsyncKernelLaunch

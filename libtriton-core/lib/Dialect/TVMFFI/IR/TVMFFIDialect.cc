@@ -45,6 +45,18 @@ bool isSupportedToConversionPair(mlir::Type inputType, mlir::Type outputType) {
                     libtriton::tvm_ffi::ObjectHandleType>(inputType));
 }
 
+bool isSupportedAsType(mlir::Type type) {
+  return mlir::isa<libtriton::tvm_ffi::AnyType, mlir::LLVM::LLVMStructType>(
+      type);
+}
+
+bool isSupportedAsConversionPair(mlir::Type inputType, mlir::Type outputType) {
+  return (mlir::isa<libtriton::tvm_ffi::AnyType>(inputType) &&
+          mlir::isa<mlir::LLVM::LLVMStructType>(outputType)) ||
+         (mlir::isa<libtriton::tvm_ffi::AnyType>(outputType) &&
+          mlir::isa<mlir::LLVM::LLVMStructType>(inputType));
+}
+
 } // namespace
 
 void TVMFFIDialect::initialize() {
@@ -69,6 +81,23 @@ mlir::LogicalResult ToOp::verify() {
                          << outputType;
   } else if (!isSupportedToConversionPair(inputType, outputType)) {
     return emitOpError() << "unsupported tvm_ffi.to conversion from "
+                         << inputType << " to " << outputType;
+  } else {
+    return mlir::success();
+  }
+}
+
+mlir::LogicalResult AsOp::verify() {
+  const mlir::Type inputType = getInput().getType();
+  const mlir::Type outputType = getOutput().getType();
+  if (!isSupportedAsType(inputType)) {
+    return emitOpError() << "unsupported input type for tvm_ffi.as: "
+                         << inputType;
+  } else if (!isSupportedAsType(outputType)) {
+    return emitOpError() << "unsupported output type for tvm_ffi.as: "
+                         << outputType;
+  } else if (!isSupportedAsConversionPair(inputType, outputType)) {
+    return emitOpError() << "unsupported tvm_ffi.as conversion from "
                          << inputType << " to " << outputType;
   } else {
     return mlir::success();

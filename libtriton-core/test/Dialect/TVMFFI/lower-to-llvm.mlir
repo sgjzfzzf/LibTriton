@@ -48,16 +48,24 @@ func.func @lowering_from_i32(%i: i32) -> !tvm_ffi.any {
   return %0 : !tvm_ffi.any
 }
 
-// CHECK-LABEL: func.func @lowering_to_i32
-// CHECK-SAME: (%[[TO_I32_ARG:.*]]: !llvm.struct<(i32, i32, i64)>) -> i32
-func.func @lowering_to_i32(%a: !tvm_ffi.any) -> i32 {
+// CHECK-LABEL: func.func @lowering_as_from_llvm
+// CHECK-SAME: (%[[AS_FROM_LLVM_ARG:.*]]: !llvm.struct<(i32, i32, i64)>) -> !llvm.struct<(i32, i32, i64)>
+func.func @lowering_as_from_llvm(%a: !llvm.struct<(i32, i32, i64)>) -> !tvm_ffi.any {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
-  // CHECK: %[[TO_I32_BITS:.*]] = llvm.extractvalue %[[TO_I32_ARG]][2] : !llvm.struct<(i32, i32, i64)>
-  // CHECK: %[[TO_I32_VALUE:.*]] = llvm.trunc %[[TO_I32_BITS]] : i64 to i32
-  // CHECK: return %[[TO_I32_VALUE]] : i32
-  %0 = tvm_ffi.to %a : !tvm_ffi.any -> i32
-  return %0 : i32
+  // CHECK: return %[[AS_FROM_LLVM_ARG]] : !llvm.struct<(i32, i32, i64)>
+  %0 = tvm_ffi.as %a : !llvm.struct<(i32, i32, i64)> -> !tvm_ffi.any
+  return %0 : !tvm_ffi.any
+}
+
+// CHECK-LABEL: func.func @lowering_as_to_llvm
+// CHECK-SAME: (%[[AS_TO_LLVM_ARG:.*]]: !llvm.struct<(i32, i32, i64)>) -> !llvm.struct<(i32, i32, i64)>
+func.func @lowering_as_to_llvm(%a: !tvm_ffi.any) -> !llvm.struct<(i32, i32, i64)> {
+  // CHECK-NOT: tvm_ffi.
+  // CHECK-NOT: builtin.unrealized_conversion_cast
+  // CHECK: return %[[AS_TO_LLVM_ARG]] : !llvm.struct<(i32, i32, i64)>
+  %0 = tvm_ffi.as %a : !tvm_ffi.any -> !llvm.struct<(i32, i32, i64)>
+  return %0 : !llvm.struct<(i32, i32, i64)>
 }
 
 // CHECK-LABEL: func.func @lowering_from_float
@@ -75,6 +83,17 @@ func.func @lowering_from_float(%f: f64) -> !tvm_ffi.any {
   // CHECK: return %[[FROM_FLOAT_VALUE]] : !llvm.struct<(i32, i32, i64)>
   %0 = tvm_ffi.to %f : f64 -> !tvm_ffi.any
   return %0 : !tvm_ffi.any
+}
+
+// CHECK-LABEL: func.func @lowering_get_type_index
+// CHECK-SAME: (%[[GET_TYPE_INDEX_ARG:.*]]: !llvm.struct<(i32, i32, i64)>) -> i32
+func.func @lowering_get_type_index(%a: !tvm_ffi.any) -> i32 {
+  // CHECK-NOT: tvm_ffi.
+  // CHECK-NOT: builtin.unrealized_conversion_cast
+  // CHECK: %[[GET_TYPE_INDEX_VALUE:.*]] = llvm.extractvalue %[[GET_TYPE_INDEX_ARG]][0] : !llvm.struct<(i32, i32, i64)>
+  // CHECK: return %[[GET_TYPE_INDEX_VALUE]] : i32
+  %0 = tvm_ffi.get_type_index %a : !tvm_ffi.any -> i32
+  return %0 : i32
 }
 
 // CHECK-LABEL: func.func @lowering_to_float
