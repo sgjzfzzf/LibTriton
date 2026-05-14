@@ -5,8 +5,8 @@
 #include "mlir/CAPI/Support.h"
 #include "llvm/Support/Casting.h"
 
-bool libtritonCoreTypeIsADLPackDLContextType(MlirType type) {
-  return llvm::isa<libtriton::dlpack::DLContextType>(unwrap(type));
+bool libtritonCoreTypeIsADLPackDLDeviceType(MlirType type) {
+  return llvm::isa<libtriton::dlpack::DLDeviceType>(unwrap(type));
 }
 
 bool libtritonCoreTypeIsADLPackDLDataTypeType(MlirType type) {
@@ -21,8 +21,8 @@ bool libtritonCoreTypeIsADLPackDLManagedTensorType(MlirType type) {
   return llvm::isa<libtriton::dlpack::DLManagedTensorType>(unwrap(type));
 }
 
-MlirType libtritonCoreDLPackDLContextTypeGet(MlirContext context) {
-  return wrap(libtriton::dlpack::DLContextType::get(unwrap(context)));
+MlirType libtritonCoreDLPackDLDeviceTypeGet(MlirContext context) {
+  return wrap(libtriton::dlpack::DLDeviceType::get(unwrap(context)));
 }
 
 MlirType libtritonCoreDLPackDLDataTypeTypeGet(MlirContext context) {
@@ -37,8 +37,8 @@ MlirType libtritonCoreDLPackDLManagedTensorTypeGet(MlirContext context) {
   return wrap(libtriton::dlpack::DLManagedTensorType::get(unwrap(context)));
 }
 
-MlirTypeID libtritonCoreDLPackDLContextTypeGetTypeID(void) {
-  return wrap(libtriton::dlpack::DLContextType::getTypeID());
+MlirTypeID libtritonCoreDLPackDLDeviceTypeGetTypeID(void) {
+  return wrap(libtriton::dlpack::DLDeviceType::getTypeID());
 }
 
 MlirTypeID libtritonCoreDLPackDLDataTypeTypeGetTypeID(void) {

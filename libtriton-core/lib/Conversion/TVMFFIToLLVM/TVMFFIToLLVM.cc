@@ -89,34 +89,6 @@ castIntegerToI64Payload(mlir::ConversionPatternRewriter &rewriter,
   }
 }
 
-mlir::FailureOr<mlir::Value> castI64PayloadToInteger(
-    mlir::ConversionPatternRewriter &rewriter, mlir::Location loc,
-    const mlir::TypeConverter *typeConverter, mlir::Type integerType,
-    mlir::TypedValue<mlir::IntegerType> payloadBits) {
-  const mlir::IntegerType targetIntegerType =
-      mlir::dyn_cast<mlir::IntegerType>(integerType);
-  if (!targetIntegerType) {
-    return mlir::failure();
-  }
-  const mlir::Type convertedIntegerType =
-      typeConverter->convertType(integerType);
-  if (!convertedIntegerType) {
-    return mlir::failure();
-  }
-  const std::int32_t width = targetIntegerType.getWidth();
-  if (width == 64) {
-    return payloadBits;
-  } else if (width < 64) {
-    return mlir::LLVM::TruncOp::create(rewriter, loc, convertedIntegerType,
-                                       payloadBits)
-        .getResult();
-  } else {
-    return mlir::LLVM::ZExtOp::create(rewriter, loc, convertedIntegerType,
-                                      payloadBits)
-        .getResult();
-  }
-}
-
 mlir::FailureOr<mlir::Value> emitTensorFromDLPackAsObjectHandle(
     mlir::ModuleOp moduleOp, mlir::ConversionPatternRewriter &rewriter,
     mlir::Location loc, mlir::Value fromManaged, mlir::Value requireAlignment,
@@ -262,11 +234,15 @@ struct LowerToOp : public mlir::OpConversionPattern<libtriton::tvm_ffi::ToOp> {
     const mlir::Location loc = op.getLoc();
     mlir::MLIRContext *context = op.getContext();
     const mlir::Type outputType = op.getOutput().getType();
+    const mlir::Type i32Ty = mlir::IntegerType::get(context, 32);
+    const mlir::Type i64Ty = mlir::IntegerType::get(context, 64);
     const mlir::Type i8Ty = mlir::IntegerType::get(context, 8);
     const mlir::Type ptrTy = mlir::LLVM::LLVMPointerType::get(context);
     const libtriton::conversion::utils::TVMFFIAnyLLVMDescriptor anyValue =
         libtriton::conversion::utils::TVMFFIAnyLLVMDescriptor::from(
             adaptor.getInput());
+    const mlir::TypedValue<mlir::IntegerType> anyTypeIndex =
+        anyValue.typeIndex(rewriter, loc);
     const mlir::TypedValue<mlir::IntegerType> payloadBits =
         anyValue.payloadBits(rewriter, loc);
     if (mlir::isa<libtriton::tvm_ffi::AnyType>(outputType)) {
@@ -274,36 +250,70 @@ struct LowerToOp : public mlir::OpConversionPattern<libtriton::tvm_ffi::ToOp> {
     } else if (mlir::isa<libtriton::dlpack::DLTensorType>(outputType)) {
       mlir::Type convertedTensorType =
           getTypeConverter()->convertType(outputType);
-      if (!convertedTensorType)
+      if (!convertedTensorType) {
         return mlir::failure();
+      }
       mlir::Value payloadPtr =
           mlir::LLVM::IntToPtrOp::create(rewriter, loc, ptrTy, payloadBits)
               .getResult();
-      mlir::Value tensorCellPtr = mlir::LLVM::GEPOp::create(
-          rewriter, loc, ptrTy, i8Ty, payloadPtr,
-          llvm::ArrayRef<mlir::LLVM::GEPArg>{kTVMFFIObjectHeaderBytes});
-      return mlir::LLVM::LoadOp::create(rewriter, loc, convertedTensorType,
-                                        tensorCellPtr)
+      return mlir::LLVM::LoadOp::create(
+                 rewriter, loc, convertedTensorType,
+                 mlir::LLVM::SelectOp::create(
+                     rewriter, loc, ptrTy,
+                     mlir::LLVM::ICmpOp::create(
+                         rewriter, loc, mlir::LLVM::ICmpPredicate::eq,
+                         anyTypeIndex,
+                         mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty,
+                                                        kTVMFFITensor)
+                             .getResult())
+                         .getResult(),
+                     mlir::LLVM::GEPOp::create(
+                         rewriter, loc, ptrTy, i8Ty, payloadPtr,
+                         llvm::ArrayRef<mlir::LLVM::GEPArg>{
+                             kTVMFFIObjectHeaderBytes}),
+                     payloadPtr))
           .getResult();
     } else if (mlir::isa<mlir::Float64Type>(outputType)) {
       mlir::Type convertedFloatType =
           getTypeConverter()->convertType(outputType);
-      if (!convertedFloatType)
+      if (!convertedFloatType) {
         return mlir::failure();
+      }
       return mlir::LLVM::BitcastOp::create(rewriter, loc, convertedFloatType,
                                            payloadBits)
           .getResult();
     } else if (mlir::isa<mlir::LLVM::LLVMPointerType,
                          libtriton::tvm_ffi::ObjectHandleType>(outputType)) {
       mlir::Type convertedPtrType = getTypeConverter()->convertType(outputType);
-      if (!convertedPtrType)
+      if (!convertedPtrType) {
         return mlir::failure();
+      }
       return mlir::LLVM::IntToPtrOp::create(rewriter, loc, convertedPtrType,
                                             payloadBits)
           .getResult();
     } else if (mlir::isa<mlir::IntegerType>(outputType)) {
-      return castI64PayloadToInteger(rewriter, loc, getTypeConverter(),
-                                     outputType, payloadBits);
+      const mlir::IntegerType targetIntegerType =
+          mlir::dyn_cast<mlir::IntegerType>(outputType);
+      if (!targetIntegerType) {
+        return mlir::failure();
+      }
+      mlir::Type convertedIntegerType =
+          getTypeConverter()->convertType(outputType);
+      if (!convertedIntegerType) {
+        return mlir::failure();
+      }
+      const std::int32_t width = targetIntegerType.getWidth();
+      if (width == 64) {
+        return payloadBits;
+      } else if (width < 64) {
+        return mlir::LLVM::TruncOp::create(rewriter, loc, convertedIntegerType,
+                                           payloadBits)
+            .getResult();
+      } else {
+        return mlir::LLVM::ZExtOp::create(rewriter, loc, convertedIntegerType,
+                                          payloadBits)
+            .getResult();
+      }
     } else {
       return mlir::failure();
     }
@@ -443,12 +453,12 @@ void populateTVMFFIToLLVMConversionPatterns(
   typeConverter.addConversion(
       [&](libtriton::dlpack::DLManagedTensorType type) -> mlir::Type {
         return libtriton::conversion::utils::DLManagedTensorLLVMDescriptor::
-            getLLVMType(type.getContext(), typeConverter.getPointerBitwidth());
+            getLLVMType(type.getContext());
       });
   typeConverter.addConversion([&](libtriton::dlpack::DLTensorType type)
                                   -> mlir::Type {
     return libtriton::conversion::utils::DLTensorLLVMDescriptor::getLLVMType(
-        type.getContext(), typeConverter.getPointerBitwidth());
+        type.getContext());
   });
   typeConverter.addConversion([](libtriton::tvm_ffi::AnyType type) {
     return libtriton::conversion::utils::TVMFFIAnyLLVMDescriptor::getLLVMType(

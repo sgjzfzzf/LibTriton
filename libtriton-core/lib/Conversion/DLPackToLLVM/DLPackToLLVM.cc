@@ -213,9 +213,9 @@ struct LowerFromMemRefOwnedOp
         llvmTypeConverter->convertType(op.getOutput().getType());
     mlir::Type convertedDLTensorType =
         libtriton::conversion::utils::DLTensorLLVMDescriptor::getLLVMType(
-            context, llvmTypeConverter->getPointerBitwidth());
-    mlir::Type convertedDLContextType =
-        libtriton::conversion::utils::DLContextLLVMDescriptor::getLLVMType(
+            context);
+    mlir::Type convertedDLDeviceType =
+        libtriton::conversion::utils::DLDeviceLLVMDescriptor::getLLVMType(
             context);
     mlir::Type convertedDLDataTypeType =
         libtriton::conversion::utils::DLDataTypeLLVMDescriptor::getLLVMType(
@@ -225,11 +225,11 @@ struct LowerFromMemRefOwnedOp
         mlir::dyn_cast<mlir::LLVM::LLVMStructType>(convertedManagedTensorType);
     mlir::LLVM::LLVMStructType dlTensorTy =
         mlir::dyn_cast<mlir::LLVM::LLVMStructType>(convertedDLTensorType);
-    mlir::LLVM::LLVMStructType dlContextTy =
-        mlir::dyn_cast<mlir::LLVM::LLVMStructType>(convertedDLContextType);
+    mlir::LLVM::LLVMStructType dlDeviceTy =
+        mlir::dyn_cast<mlir::LLVM::LLVMStructType>(convertedDLDeviceType);
     mlir::LLVM::LLVMStructType dlDataTypeTy =
         mlir::dyn_cast<mlir::LLVM::LLVMStructType>(convertedDLDataTypeType);
-    if (!dlManagedTensorTy || !dlTensorTy || !dlContextTy || !dlDataTypeTy)
+    if (!dlManagedTensorTy || !dlTensorTy || !dlDeviceTy || !dlDataTypeTy)
       return mlir::failure();
 
     // Determine DLDataType fields from the memref element type
@@ -292,7 +292,7 @@ struct LowerFromMemRefOwnedOp
     if (!stridesAlloca)
       return mlir::failure();
 
-    // Build DLContext struct: {device_type = kDLCUDA = 1, device_id = 0}
+    // Build DLDevice struct: {device_type = kDLCUDA, device_id = 0}
     mlir::TypedValue<mlir::IntegerType> deviceTypeValue =
         mlir::cast<mlir::TypedValue<mlir::IntegerType>>(
             mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty,
@@ -302,9 +302,9 @@ struct LowerFromMemRefOwnedOp
         mlir::cast<mlir::TypedValue<mlir::IntegerType>>(
             mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, 0LL)
                 .getResult());
-    libtriton::conversion::utils::DLContextLLVMDescriptor dlContext =
-        libtriton::conversion::utils::DLContextLLVMDescriptor::build(
-            rewriter, loc, dlContextTy, deviceTypeValue, deviceIdValue);
+    libtriton::conversion::utils::DLDeviceLLVMDescriptor dlDevice =
+        libtriton::conversion::utils::DLDeviceLLVMDescriptor::build(
+            rewriter, loc, dlDeviceTy, deviceTypeValue, deviceIdValue);
 
     // Build DLDataType struct: {code, bits, lanes = 1}
     mlir::TypedValue<mlir::IntegerType> dtypeCodeValue =
@@ -335,8 +335,8 @@ struct LowerFromMemRefOwnedOp
 
     libtriton::conversion::utils::DLTensorLLVMDescriptor dlTensor =
         libtriton::conversion::utils::DLTensorLLVMDescriptor::build(
-            rewriter, loc, dlTensorTy, dataPtr, dlContext, ndimValue,
-            dlDataType, shapeAlloca, stridesAlloca, byteOffsetValue);
+            rewriter, loc, dlTensorTy, dataPtr, dlDevice, ndimValue, dlDataType,
+            shapeAlloca, stridesAlloca, byteOffsetValue);
 
     // Preserve the original allocation base pointer so runtime deleters can
     // free the correct address even when tensor data points to an aligned view.
@@ -410,8 +410,8 @@ struct LowerFromMemRefBorrowedOp
         static_cast<const mlir::LLVMTypeConverter *>(getTypeConverter());
     mlir::Type convertedDLTensorType =
         llvmTypeConverter->convertType(op.getOutput().getType());
-    mlir::Type convertedDLContextType =
-        libtriton::conversion::utils::DLContextLLVMDescriptor::getLLVMType(
+    mlir::Type convertedDLDeviceType =
+        libtriton::conversion::utils::DLDeviceLLVMDescriptor::getLLVMType(
             context);
     mlir::Type convertedDLDataTypeType =
         libtriton::conversion::utils::DLDataTypeLLVMDescriptor::getLLVMType(
@@ -419,11 +419,11 @@ struct LowerFromMemRefBorrowedOp
 
     mlir::LLVM::LLVMStructType dlTensorTy =
         mlir::dyn_cast<mlir::LLVM::LLVMStructType>(convertedDLTensorType);
-    mlir::LLVM::LLVMStructType dlContextTy =
-        mlir::dyn_cast<mlir::LLVM::LLVMStructType>(convertedDLContextType);
+    mlir::LLVM::LLVMStructType dlDeviceTy =
+        mlir::dyn_cast<mlir::LLVM::LLVMStructType>(convertedDLDeviceType);
     mlir::LLVM::LLVMStructType dlDataTypeTy =
         mlir::dyn_cast<mlir::LLVM::LLVMStructType>(convertedDLDataTypeType);
-    if (!dlTensorTy || !dlContextTy || !dlDataTypeTy)
+    if (!dlTensorTy || !dlDeviceTy || !dlDataTypeTy)
       return mlir::failure();
 
     std::uint8_t dtypeCode;
@@ -484,9 +484,9 @@ struct LowerFromMemRefBorrowedOp
         mlir::cast<mlir::TypedValue<mlir::IntegerType>>(
             mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, 0LL)
                 .getResult());
-    libtriton::conversion::utils::DLContextLLVMDescriptor dlContext =
-        libtriton::conversion::utils::DLContextLLVMDescriptor::build(
-            rewriter, loc, dlContextTy, deviceTypeValue, deviceIdValue);
+    libtriton::conversion::utils::DLDeviceLLVMDescriptor dlDevice =
+        libtriton::conversion::utils::DLDeviceLLVMDescriptor::build(
+            rewriter, loc, dlDeviceTy, deviceTypeValue, deviceIdValue);
 
     mlir::TypedValue<mlir::IntegerType> dtypeCodeValue =
         mlir::cast<mlir::TypedValue<mlir::IntegerType>>(
@@ -516,8 +516,8 @@ struct LowerFromMemRefBorrowedOp
 
     libtriton::conversion::utils::DLTensorLLVMDescriptor dlTensor =
         libtriton::conversion::utils::DLTensorLLVMDescriptor::build(
-            rewriter, loc, dlTensorTy, dataPtr, dlContext, ndimValue,
-            dlDataType, shapeAlloca, stridesAlloca, byteOffsetValue);
+            rewriter, loc, dlTensorTy, dataPtr, dlDevice, ndimValue, dlDataType,
+            shapeAlloca, stridesAlloca, byteOffsetValue);
 
     rewriter.replaceOp(op, dlTensor.as());
     return mlir::success();
@@ -540,21 +540,23 @@ struct LowerToMemRefOp
 
     mlir::Type outputType =
         getTypeConverter()->convertType(op.getOutput().getType());
-    if (!outputType)
+    if (!outputType) {
       return mlir::failure();
+    }
 
-    mlir::Type convertedDLContextType =
-        libtriton::conversion::utils::DLContextLLVMDescriptor::getLLVMType(
+    mlir::Type convertedDLDeviceType =
+        libtriton::conversion::utils::DLDeviceLLVMDescriptor::getLLVMType(
             context);
     mlir::Type convertedDLDataTypeType =
         libtriton::conversion::utils::DLDataTypeLLVMDescriptor::getLLVMType(
             context);
-    mlir::LLVM::LLVMStructType dlContextTy =
-        mlir::dyn_cast<mlir::LLVM::LLVMStructType>(convertedDLContextType);
+    mlir::LLVM::LLVMStructType dlDeviceTy =
+        mlir::dyn_cast<mlir::LLVM::LLVMStructType>(convertedDLDeviceType);
     mlir::LLVM::LLVMStructType dlDataTypeTy =
         mlir::dyn_cast<mlir::LLVM::LLVMStructType>(convertedDLDataTypeType);
-    if (!dlContextTy || !dlDataTypeTy)
+    if (!dlDeviceTy || !dlDataTypeTy) {
       return mlir::failure();
+    }
 
     mlir::Type i64Ty = mlir::IntegerType::get(context, 64);
     mlir::Type ptrTy = mlir::LLVM::LLVMPointerType::get(context);
@@ -686,8 +688,9 @@ struct LowerTensorFromLLVMOp
     mlir::Type convertedTensorType =
         getTypeConverter()->convertType(op.getOutput().getType());
     if (!convertedTensorType ||
-        adaptor.getInput().getType() != convertedTensorType)
+        adaptor.getInput().getType() != convertedTensorType) {
       return mlir::failure();
+    }
     rewriter.replaceOp(op, adaptor.getInput());
     return mlir::success();
   }
@@ -700,8 +703,9 @@ struct LowerTensorToLLVMOp
   mlir::LogicalResult
   matchAndRewrite(libtriton::dlpack::TensorToLLVMOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
-    if (adaptor.getInput().getType() != op.getOutput().getType())
+    if (adaptor.getInput().getType() != op.getOutput().getType()) {
       return mlir::failure();
+    }
     rewriter.replaceOp(op, adaptor.getInput());
     return mlir::success();
   }
@@ -741,8 +745,8 @@ void populateDLPackToLLVMConversionPatterns(
     mlir::ConversionTarget &target, mlir::LLVMTypeConverter &typeConverter,
     mlir::RewritePatternSet &patterns) {
   mlir::MLIRContext *context = patterns.getContext();
-  typeConverter.addConversion([](libtriton::dlpack::DLContextType type) {
-    return libtriton::conversion::utils::DLContextLLVMDescriptor::getLLVMType(
+  typeConverter.addConversion([](libtriton::dlpack::DLDeviceType type) {
+    return libtriton::conversion::utils::DLDeviceLLVMDescriptor::getLLVMType(
         type.getContext());
   });
   typeConverter.addConversion([](libtriton::dlpack::DLDataTypeType type) {
@@ -752,12 +756,12 @@ void populateDLPackToLLVMConversionPatterns(
   typeConverter.addConversion([&](libtriton::dlpack::DLTensorType type)
                                   -> mlir::Type {
     return libtriton::conversion::utils::DLTensorLLVMDescriptor::getLLVMType(
-        type.getContext(), typeConverter.getPointerBitwidth());
+        type.getContext());
   });
   typeConverter.addConversion(
       [&](libtriton::dlpack::DLManagedTensorType type) -> mlir::Type {
         return libtriton::conversion::utils::DLManagedTensorLLVMDescriptor::
-            getLLVMType(type.getContext(), typeConverter.getPointerBitwidth());
+            getLLVMType(type.getContext());
       });
 
   mlir::populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(

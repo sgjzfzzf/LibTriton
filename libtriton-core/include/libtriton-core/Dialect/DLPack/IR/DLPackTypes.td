@@ -9,10 +9,10 @@ class DLPack_Type<string name, string typeMnemonic>
   let mnemonic = typeMnemonic;
 }
 
-def DLPack_DLContextType : DLPack_Type<"DLContext", "context"> {
-  let summary = "DLPack DLContext value type";
-  let description = [{Represents the legacy DLPack DLContext structure used by
-                          the referenced dlpack.h ABI.}];
+def DLPack_DLDeviceType : DLPack_Type<"DLDevice", "device"> {
+  let summary = "DLPack DLDevice value type";
+  let description = [{Represents the DLPack DLDevice structure used by the
+                          referenced dlpack.h ABI.}];
 }
 
 def DLPack_DLDataTypeType : DLPack_Type<"DLDataType", "datatype"> {

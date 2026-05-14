@@ -1,6 +1,7 @@
 #ifndef LIBTRITON_CORE_CONVERSION_DLPACKTOLLVM_DLPACKLLVMDESCRIPTORS_H_
 #define LIBTRITON_CORE_CONVERSION_DLPACKTOLLVM_DLPACKLLVMDESCRIPTORS_H_
 
+#include <cassert>
 #include <cstdint>
 
 #include "libtriton-core/Conversion/Utils/LLVMDescriptorCRTPBase.h"
@@ -9,15 +10,15 @@
 
 namespace libtriton::conversion::utils {
 
-class DLContextLLVMDescriptor
+class DLDeviceLLVMDescriptor
     : public LLVMDescriptorCRTPBase<
-          DLContextLLVMDescriptor,
+          DLDeviceLLVMDescriptor,
           LLVMStructFieldList<mlir::TypedValue<mlir::IntegerType>,
                               mlir::TypedValue<mlir::IntegerType>>> {
 public:
   using FieldList = LLVMStructFieldList<mlir::TypedValue<mlir::IntegerType>,
                                         mlir::TypedValue<mlir::IntegerType>>;
-  using Base = LLVMDescriptorCRTPBase<DLContextLLVMDescriptor, FieldList>;
+  using Base = LLVMDescriptorCRTPBase<DLDeviceLLVMDescriptor, FieldList>;
   using StructValue = typename Base::StructValue;
 
   using Base::as;
@@ -75,7 +76,7 @@ class DLTensorLLVMDescriptor
     : public LLVMDescriptorCRTPBase<
           DLTensorLLVMDescriptor,
           LLVMStructFieldList<mlir::TypedValue<mlir::LLVM::LLVMPointerType>,
-                              DLContextLLVMDescriptor,
+                              DLDeviceLLVMDescriptor,
                               mlir::TypedValue<mlir::IntegerType>,
                               DLDataTypeLLVMDescriptor,
                               mlir::TypedValue<mlir::LLVM::LLVMPointerType>,
@@ -83,7 +84,7 @@ class DLTensorLLVMDescriptor
                               mlir::TypedValue<mlir::IntegerType>>> {
 public:
   using FieldList = LLVMStructFieldList<
-      mlir::TypedValue<mlir::LLVM::LLVMPointerType>, DLContextLLVMDescriptor,
+      mlir::TypedValue<mlir::LLVM::LLVMPointerType>, DLDeviceLLVMDescriptor,
       mlir::TypedValue<mlir::IntegerType>, DLDataTypeLLVMDescriptor,
       mlir::TypedValue<mlir::LLVM::LLVMPointerType>,
       mlir::TypedValue<mlir::LLVM::LLVMPointerType>,
@@ -96,14 +97,13 @@ public:
   using Base::build;
   using Base::from;
 
-  static mlir::LLVM::LLVMStructType getLLVMType(mlir::MLIRContext *context,
-                                                std::uint32_t sizeTWidth);
+  static mlir::LLVM::LLVMStructType getLLVMType(mlir::MLIRContext *context);
 
   mlir::TypedValue<mlir::LLVM::LLVMPointerType>
   data(mlir::ConversionPatternRewriter &rewriter, mlir::Location loc) const;
 
-  DLContextLLVMDescriptor ctx(mlir::ConversionPatternRewriter &rewriter,
-                              mlir::Location loc) const;
+  DLDeviceLLVMDescriptor device(mlir::ConversionPatternRewriter &rewriter,
+                                mlir::Location loc) const;
 
   mlir::TypedValue<mlir::IntegerType>
   ndim(mlir::ConversionPatternRewriter &rewriter, mlir::Location loc) const;
@@ -144,8 +144,7 @@ public:
   using Base::build;
   using Base::from;
 
-  static mlir::LLVM::LLVMStructType getLLVMType(mlir::MLIRContext *context,
-                                                std::uint32_t sizeTWidth);
+  static mlir::LLVM::LLVMStructType getLLVMType(mlir::MLIRContext *context);
 
   DLTensorLLVMDescriptor tensor(mlir::ConversionPatternRewriter &rewriter,
                                 mlir::Location loc) const;
@@ -162,21 +161,25 @@ private:
 };
 
 inline mlir::TypedValue<mlir::IntegerType>
-DLContextLLVMDescriptor::deviceType(mlir::ConversionPatternRewriter &rewriter,
-                                    mlir::Location loc) const {
+DLDeviceLLVMDescriptor::deviceType(mlir::ConversionPatternRewriter &rewriter,
+                                   mlir::Location loc) const {
   return this->template get<0>(rewriter, loc);
 }
 
 inline mlir::LLVM::LLVMStructType
-DLContextLLVMDescriptor::getLLVMType(mlir::MLIRContext *context) {
-  return mlir::LLVM::LLVMStructType::getLiteral(
-      context, {mlir::IntegerType::get(context, 32),
-                mlir::IntegerType::get(context, 32)});
+DLDeviceLLVMDescriptor::getLLVMType(mlir::MLIRContext *context) {
+  mlir::LLVM::LLVMStructType type = mlir::LLVM::LLVMStructType::getLiteral(
+      context,
+      {mlir::IntegerType::get(context, 32),
+       mlir::IntegerType::get(context, 32)},
+      /*isPacked=*/true);
+  assert(type.isPacked() && "DLDevice LLVM struct must be packed");
+  return type;
 }
 
 inline mlir::TypedValue<mlir::IntegerType>
-DLContextLLVMDescriptor::deviceId(mlir::ConversionPatternRewriter &rewriter,
-                                  mlir::Location loc) const {
+DLDeviceLLVMDescriptor::deviceId(mlir::ConversionPatternRewriter &rewriter,
+                                 mlir::Location loc) const {
   return this->template get<1>(rewriter, loc);
 }
 
@@ -188,10 +191,13 @@ DLDataTypeLLVMDescriptor::code(mlir::ConversionPatternRewriter &rewriter,
 
 inline mlir::LLVM::LLVMStructType
 DLDataTypeLLVMDescriptor::getLLVMType(mlir::MLIRContext *context) {
-  return mlir::LLVM::LLVMStructType::getLiteral(
+  mlir::LLVM::LLVMStructType type = mlir::LLVM::LLVMStructType::getLiteral(
       context,
       {mlir::IntegerType::get(context, 8), mlir::IntegerType::get(context, 8),
-       mlir::IntegerType::get(context, 16)});
+       mlir::IntegerType::get(context, 16)},
+      /*isPacked=*/true);
+  assert(type.isPacked() && "DLDataType LLVM struct must be packed");
+  return type;
 }
 
 inline mlir::TypedValue<mlir::IntegerType>
@@ -213,21 +219,24 @@ DLTensorLLVMDescriptor::data(mlir::ConversionPatternRewriter &rewriter,
 }
 
 inline mlir::LLVM::LLVMStructType
-DLTensorLLVMDescriptor::getLLVMType(mlir::MLIRContext *context,
-                                    std::uint32_t sizeTWidth) {
-  return mlir::LLVM::LLVMStructType::getLiteral(
-      context, {mlir::LLVM::LLVMPointerType::get(context),
-                DLContextLLVMDescriptor::getLLVMType(context),
-                mlir::IntegerType::get(context, 32),
-                DLDataTypeLLVMDescriptor::getLLVMType(context),
-                mlir::LLVM::LLVMPointerType::get(context),
-                mlir::LLVM::LLVMPointerType::get(context),
-                mlir::IntegerType::get(context, sizeTWidth)});
+DLTensorLLVMDescriptor::getLLVMType(mlir::MLIRContext *context) {
+  mlir::LLVM::LLVMStructType type = mlir::LLVM::LLVMStructType::getLiteral(
+      context,
+      {mlir::LLVM::LLVMPointerType::get(context),
+       DLDeviceLLVMDescriptor::getLLVMType(context),
+       mlir::IntegerType::get(context, 32),
+       DLDataTypeLLVMDescriptor::getLLVMType(context),
+       mlir::LLVM::LLVMPointerType::get(context),
+       mlir::LLVM::LLVMPointerType::get(context),
+       mlir::IntegerType::get(context, 64)},
+      /*isPacked=*/true);
+  assert(type.isPacked() && "DLTensor LLVM struct must be packed");
+  return type;
 }
 
-inline DLContextLLVMDescriptor
-DLTensorLLVMDescriptor::ctx(mlir::ConversionPatternRewriter &rewriter,
-                            mlir::Location loc) const {
+inline DLDeviceLLVMDescriptor
+DLTensorLLVMDescriptor::device(mlir::ConversionPatternRewriter &rewriter,
+                               mlir::Location loc) const {
   return this->template get<1>(rewriter, loc);
 }
 
@@ -268,12 +277,15 @@ DLManagedTensorLLVMDescriptor::tensor(mlir::ConversionPatternRewriter &rewriter,
 }
 
 inline mlir::LLVM::LLVMStructType
-DLManagedTensorLLVMDescriptor::getLLVMType(mlir::MLIRContext *context,
-                                           std::uint32_t sizeTWidth) {
-  return mlir::LLVM::LLVMStructType::getLiteral(
-      context, {DLTensorLLVMDescriptor::getLLVMType(context, sizeTWidth),
-                mlir::LLVM::LLVMPointerType::get(context),
-                mlir::LLVM::LLVMPointerType::get(context)});
+DLManagedTensorLLVMDescriptor::getLLVMType(mlir::MLIRContext *context) {
+  mlir::LLVM::LLVMStructType type = mlir::LLVM::LLVMStructType::getLiteral(
+      context,
+      {DLTensorLLVMDescriptor::getLLVMType(context),
+       mlir::LLVM::LLVMPointerType::get(context),
+       mlir::LLVM::LLVMPointerType::get(context)},
+      /*isPacked=*/true);
+  assert(type.isPacked() && "DLManagedTensor LLVM struct must be packed");
+  return type;
 }
 
 inline mlir::TypedValue<mlir::LLVM::LLVMPointerType>

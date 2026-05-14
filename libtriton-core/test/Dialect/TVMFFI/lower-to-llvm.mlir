@@ -149,7 +149,7 @@ func.func @lowering_error_set_raised_from_c_str(%kind: !llvm.ptr, %message: !llv
 }
 
 // CHECK-LABEL: func.func @lowering_from_tensor
-// CHECK-SAME: (%[[FROM_DLPACK_ARG:.*]]: !llvm.struct<(struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>, %[[FROM_TENSOR_ALIGN:.*]]: i32, %[[FROM_TENSOR_CONTIG:.*]]: i32)
+// CHECK-SAME: (%[[FROM_DLPACK_ARG:.*]]: !llvm.struct<packed (struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>, %[[FROM_TENSOR_ALIGN:.*]]: i32, %[[FROM_TENSOR_CONTIG:.*]]: i32)
 // CHECK-SAME: -> !llvm.struct<(i32, i32, i64)>
 // NO-CAST-LABEL: func.func @lowering_from_tensor
 func.func @lowering_from_tensor(%from: !dlpack.managed_tensor, %align: i32, %contig: i32) -> !tvm_ffi.any {
@@ -158,7 +158,7 @@ func.func @lowering_from_tensor(%from: !dlpack.managed_tensor, %align: i32, %con
   // CHECK: %[[ONE:.*]] = llvm.mlir.constant(1 : i64)
   // CHECK: %[[FROM_SIZE:.*]] = llvm.mlir.constant(64 : i64)
   // CHECK: %[[FROM_SLOT:.*]] = llvm.call @malloc(%[[FROM_SIZE]]) : (i64) -> !llvm.ptr
-  // CHECK: llvm.store %[[FROM_DLPACK_ARG]], %[[FROM_SLOT]] : !llvm.struct<(struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>, !llvm.ptr
+  // CHECK: llvm.store %[[FROM_DLPACK_ARG]], %[[FROM_SLOT]] : !llvm.struct<packed (struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>, !llvm.ptr
   // CHECK: %[[OUT_SLOT:.*]] = llvm.alloca %[[ONE]] x i64 : (i64) -> !llvm.ptr
   // CHECK: %[[ZERO_PTR:.*]] = llvm.mlir.zero : !llvm.ptr
   // CHECK: llvm.store %[[ZERO_PTR]], %[[OUT_SLOT]]
@@ -182,18 +182,22 @@ func.func @lowering_from_tensor(%from: !dlpack.managed_tensor, %align: i32, %con
 
 // CHECK-LABEL: func.func @lowering_to_tensor
 // CHECK-SAME: (%[[TO_TENSOR_ARG:.*]]: !llvm.struct<(i32, i32, i64)>)
-// CHECK-SAME: -> !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>
+// CHECK-SAME: -> !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
 // NO-CAST-LABEL: func.func @lowering_to_tensor
 func.func @lowering_to_tensor(%a: !tvm_ffi.any) -> !dlpack.tensor {
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // NO-CAST-NOT: builtin.unrealized_conversion_cast
-  // CHECK: %[[PAYLOAD_BITS:.*]] = llvm.extractvalue %[[TO_TENSOR_ARG]][2]
-  // CHECK: %[[PAYLOAD_PTR:.*]] = llvm.inttoptr %[[PAYLOAD_BITS]] : i64 to !llvm.ptr
-  // CHECK: %[[TENSOR_CELL_PTR:.*]] = llvm.getelementptr %[[PAYLOAD_PTR]][24]
-  // CHECK: %[[TENSOR_VALUE:.*]] = llvm.load %[[TENSOR_CELL_PTR]] : !llvm.ptr -> !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>
+  // CHECK-DAG: %[[TYPE_INDEX:.*]] = llvm.extractvalue %[[TO_TENSOR_ARG]][0]
+  // CHECK-DAG: %[[PAYLOAD_BITS:.*]] = llvm.extractvalue %[[TO_TENSOR_ARG]][2]
+  // CHECK-DAG: %[[TENSOR_TYPE:.*]] = llvm.mlir.constant(70 : i32)
+  // CHECK-DAG: %[[IS_TENSOR:.*]] = llvm.icmp "eq" %[[TYPE_INDEX]], %[[TENSOR_TYPE]] : i32
+  // CHECK-DAG: %[[PAYLOAD_PTR:.*]] = llvm.inttoptr %[[PAYLOAD_BITS]] : i64 to !llvm.ptr
+  // CHECK-DAG: %[[TENSOR_CELL_PTR:.*]] = llvm.getelementptr %[[PAYLOAD_PTR]][24]
+  // CHECK: %[[SELECTED_TENSOR_PTR:.*]] = llvm.select %[[IS_TENSOR]], %[[TENSOR_CELL_PTR]], %[[PAYLOAD_PTR]] : i1, !llvm.ptr
+  // CHECK: %[[TENSOR_VALUE:.*]] = llvm.load %[[SELECTED_TENSOR_PTR]] : !llvm.ptr -> !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
   // CHECK-NOT: tvm_ffi.to
   // CHECK-NOT: builtin.unrealized_conversion_cast
-  // CHECK: return %[[TENSOR_VALUE]] : !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>
+  // CHECK: return %[[TENSOR_VALUE]] : !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
   // NO-CAST: return
   %0 = tvm_ffi.to %a : !tvm_ffi.any -> !dlpack.tensor
   return %0 : !dlpack.tensor
@@ -229,24 +233,24 @@ func.func @lowering_to_object(%a: !tvm_ffi.any) -> !tvm_ffi.object_handle {
 }
 
 // CHECK-LABEL: func.func @lowering_tensor_from_llvm
-// CHECK-SAME: (%[[TENSOR_FROM_LLVM_ARG:.*]]: !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>)
-// CHECK-SAME: -> !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>
-func.func @lowering_tensor_from_llvm(%x: !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>) -> !dlpack.tensor {
+// CHECK-SAME: (%[[TENSOR_FROM_LLVM_ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>)
+// CHECK-SAME: -> !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
+func.func @lowering_tensor_from_llvm(%x: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>) -> !dlpack.tensor {
   // CHECK-NOT: dlpack.
   // CHECK-NOT: builtin.unrealized_conversion_cast
-  // CHECK: return %[[TENSOR_FROM_LLVM_ARG]] : !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>
-  %0 = dlpack.tensor_from_llvm %x : !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)> -> !dlpack.tensor
+  // CHECK: return %[[TENSOR_FROM_LLVM_ARG]] : !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
+  %0 = dlpack.tensor_from_llvm %x : !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)> -> !dlpack.tensor
   return %0 : !dlpack.tensor
 }
 
 // CHECK-LABEL: func.func @lowering_tensor_to_llvm
-// CHECK-SAME: (%[[TENSOR_TO_LLVM_ARG:.*]]: !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>)
-// CHECK-SAME: -> !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>
-func.func @lowering_tensor_to_llvm(%x: !dlpack.tensor) -> !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)> {
+// CHECK-SAME: (%[[TENSOR_TO_LLVM_ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>)
+// CHECK-SAME: -> !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
+func.func @lowering_tensor_to_llvm(%x: !dlpack.tensor) -> !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)> {
   // CHECK-NOT: dlpack.
   // CHECK-NOT: builtin.unrealized_conversion_cast
-  // CHECK: return %[[TENSOR_TO_LLVM_ARG]] : !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>
-  %0 = dlpack.tensor_to_llvm %x : !dlpack.tensor -> !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>
-  return %0 : !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>
+  // CHECK: return %[[TENSOR_TO_LLVM_ARG]] : !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
+  %0 = dlpack.tensor_to_llvm %x : !dlpack.tensor -> !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
+  return %0 : !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
 }
 

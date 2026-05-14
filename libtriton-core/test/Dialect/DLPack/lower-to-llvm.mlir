@@ -7,7 +7,7 @@
 
 // CHECK-LABEL: func.func @lower_from_memref
 // CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<(ptr, ptr, i64, array<1 x i64>, array<1 x i64>)>)
-// CHECK-SAME: -> !llvm.struct<(struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>
+// CHECK-SAME: -> !llvm.struct<packed (struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>
 // CHECK-NOT: llvm.alloca
 func.func @lower_from_memref(%arg0: memref<?xf32>) -> !dlpack.managed_tensor {
   // Extract data pointer and offset from memref descriptor
@@ -31,7 +31,7 @@ func.func @lower_from_memref(%arg0: memref<?xf32>) -> !dlpack.managed_tensor {
   // CHECK: %[[STRIDE_GEP:.*]] = llvm.getelementptr %[[STRIDE_SLOT]][0]
   // CHECK: llvm.store %[[DIM0_STRIDE]], %[[STRIDE_GEP]]
   
-  // Build DLContext and DLDataType structures
+  // Build DLDevice and DLDataType structures
   // CHECK: llvm.mlir.constant(2 : i32)
   // CHECK: llvm.mlir.constant(0 : i32)
   // CHECK: llvm.mlir.constant(2 : i8)
@@ -44,13 +44,13 @@ func.func @lower_from_memref(%arg0: memref<?xf32>) -> !dlpack.managed_tensor {
   // CHECK: %[[DTENSOR:.*]] = llvm.insertvalue %[[BYTE_OFFSET]], %[[STRIDE_SLOT_VAL]][6]
 
   // CHECK: %[[DELETER_ADDR:.*]] = llvm.mlir.addressof @__libtriton_dlpack_default_managed_tensor_deleter : !llvm.ptr
-  // CHECK: %[[MANAGED_POISON:.*]] = llvm.mlir.poison : !llvm.struct<(struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>
+  // CHECK: %[[MANAGED_POISON:.*]] = llvm.mlir.poison : !llvm.struct<packed (struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>
   // CHECK: %[[MANAGED_WITH_DTENSOR:.*]] = llvm.insertvalue %[[DTENSOR]], %[[MANAGED_POISON]][0]
   // CHECK: %[[MANAGED_WITH_CTX:.*]] = llvm.insertvalue %[[ALLOCATED_PTR]], %[[MANAGED_WITH_DTENSOR]][1]
   // CHECK: %[[MANAGED_FINAL:.*]] = llvm.insertvalue %[[DELETER_ADDR]], %[[MANAGED_WITH_CTX]][2]
   
   // Build managed tensor with malloc-allocated arrays
-  // CHECK: return %[[MANAGED:.*]] : !llvm.struct<(struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>
+  // CHECK: return %[[MANAGED:.*]] : !llvm.struct<packed (struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>
   %0 = dlpack.from_memref_owned %arg0 : memref<?xf32> -> !dlpack.managed_tensor
   return %0 : !dlpack.managed_tensor
 }
@@ -58,11 +58,11 @@ func.func @lower_from_memref(%arg0: memref<?xf32>) -> !dlpack.managed_tensor {
 // -----
 
 // CHECK-LABEL: func.func @lower_view
-// CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<(struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>)
-// CHECK-SAME: -> !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>
+// CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>)
+// CHECK-SAME: -> !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
 func.func @lower_view(%arg0: !dlpack.managed_tensor) -> !dlpack.tensor {
   // CHECK: %[[TENSOR_VIEW:.*]] = llvm.extractvalue %[[ARG]][0]
-  // CHECK: return %[[TENSOR_VIEW]] : !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>
+  // CHECK: return %[[TENSOR_VIEW]] : !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
   %0 = dlpack.view %arg0 : !dlpack.managed_tensor -> !dlpack.tensor
   return %0 : !dlpack.tensor
 }
@@ -70,7 +70,7 @@ func.func @lower_view(%arg0: !dlpack.managed_tensor) -> !dlpack.tensor {
 // -----
 
 // CHECK-LABEL: func.func @lower_to_memref
-// CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>)
+// CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>)
 // CHECK-SAME: -> !llvm.struct<(ptr, ptr, i64, array<1 x i64>, array<1 x i64>)>
 func.func @lower_to_memref(%arg0: !dlpack.tensor) -> memref<?xf32> {
   // CHECK: %[[DATA_PTR:.*]] = llvm.extractvalue %[[ARG]][0]
@@ -94,7 +94,7 @@ func.func @lower_to_memref(%arg0: !dlpack.tensor) -> memref<?xf32> {
 // -----
 
 // CHECK-LABEL: func.func @lower_ndim
-// CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>)
+// CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>)
 // CHECK-SAME: -> i32
 func.func @lower_ndim(%arg0: !dlpack.tensor) -> i32 {
   // CHECK: %[[NDIM:.*]] = llvm.extractvalue %[[ARG]][2]
@@ -106,7 +106,7 @@ func.func @lower_ndim(%arg0: !dlpack.tensor) -> i32 {
 // -----
 
 // CHECK-LABEL: func.func @lower_shape
-// CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>, %[[IDX:.*]]: i64)
+// CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>, %[[IDX:.*]]: i64)
 // CHECK-SAME: -> i64
 func.func @lower_shape(%arg0: !dlpack.tensor, %arg1: index) -> i64 {
   // CHECK: %[[SHAPE_PTR:.*]] = llvm.extractvalue %[[ARG]][4]
@@ -120,7 +120,7 @@ func.func @lower_shape(%arg0: !dlpack.tensor, %arg1: index) -> i64 {
 // -----
 
 // CHECK-LABEL: func.func @lower_strides
-// CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>, %[[IDX:.*]]: i64)
+// CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>, %[[IDX:.*]]: i64)
 // CHECK-SAME: -> i64
 func.func @lower_strides(%arg0: !dlpack.tensor, %arg1: index) -> i64 {
   // CHECK: %[[STRIDES_PTR:.*]] = llvm.extractvalue %[[ARG]][5]
@@ -134,7 +134,7 @@ func.func @lower_strides(%arg0: !dlpack.tensor, %arg1: index) -> i64 {
 // -----
 
 // CHECK-LABEL: func.func @lower_byte_offset
-// CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<(ptr, struct<(i32, i32)>, i32, struct<(i8, i8, i16)>, ptr, ptr, i64)>)
+// CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>)
 // CHECK-SAME: -> i64
 func.func @lower_byte_offset(%arg0: !dlpack.tensor) -> i64 {
   // CHECK: %[[OFFSET:.*]] = llvm.extractvalue %[[ARG]][6]

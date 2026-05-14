@@ -4,7 +4,7 @@ version = "0.1.0"
 dependencies = ["apache-tvm-ffi", "torch", "triton"]
 
 [build-system]
-requires = ["cmake", "ninja", "scikit-build-core"]
+requires = ["cmake", "nanobind", "ninja", "scikit-build-core"]
 build-backend = "scikit_build_core.build"
 
 [tool.scikit-build]
