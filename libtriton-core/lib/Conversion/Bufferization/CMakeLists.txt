@@ -1,0 +1,10 @@
+add_mlir_conversion_library(
+  LibTritonOneShotBufferize
+  Bufferization.cc
+  DEPENDS
+  MLIRConversionPassIncGen
+  LINK_LIBS
+  PUBLIC
+  MLIRBufferizationTransforms
+  MLIRGPUDialect
+  MLIRPass)

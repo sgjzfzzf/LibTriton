@@ -1,0 +1,26 @@
+add_mlir_library(
+  LibTritonUtilsRegistration
+  Registration.cc
+  LINK_LIBS
+  PUBLIC
+  DLPackDialect
+  DLPackToLLVM
+  LibTritonOneShotBufferize
+  MLIRArithDialect
+  MLIRControlFlowDialect
+  MLIRConvertToLLVMPass
+  MLIRFuncDialect
+  MLIRLLVMDialect
+  MLIRMemRefDialect
+  MLIRNVVMDialect
+  MLIRRegisterAllPasses
+  MLIRSCFDialect
+  TorchMLIRCAPI
+  TorchMLIRTorchConversionDialect
+  TorchExtAsyncKernelLaunch
+  TorchExtBufferize
+  TorchExtDialect
+  TorchExtNormalizeOperands
+  TorchExtToLLVM
+  TVMFFIDialect
+  TVMFFIToLLVM)

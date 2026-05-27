@@ -5,24 +5,7 @@ set_target_properties(libtriton-core-opt PROPERTIES RUNTIME_OUTPUT_DIRECTORY
 
 target_link_libraries(
   libtriton-core-opt
-  PRIVATE DLPackDialect
-          DLPackToLLVM
-          MemRefOriginAnalysis
-          TorchExtToLLVM
-          TorchExtAsyncKernelLaunch
-          TorchExtNormalizeOperands
-          MLIRArithDialect
-          MLIRConvertToLLVMPass
-          MLIRControlFlowDialect
-          MLIRFuncDialect
-          MLIRGPUDialect
-          MLIRMemRefDialect
-          MLIRMlirOptMain
-          MLIRSCFDialect
-          MLIRTransforms
-          TorchMLIRTorchConversionDialect
-          TorchExtDialect
-          TVMFFIToLLVM
-          TVMFFIDialect)
+  PRIVATE LibTritonUtilsRegistration
+          MLIRMlirOptMain)
 
 mlir_check_all_link_libraries(libtriton-core-opt)

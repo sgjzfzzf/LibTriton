@@ -26,3 +26,22 @@ def ConvertTorchExtToLLVM : Pass<"convert-torchext-to-llvm", "mlir::ModuleOp"> {
     "mlir::gpu::GPUDialect", "mlir::LLVM::LLVMDialect"
   ];
 }
+
+def LibTritonOneShotBufferize
+    : Pass<"libtriton-one-shot-bufferize", "mlir::ModuleOp"> {
+  let summary = "LibTriton wrapper pass for one-shot bufferize";
+  let description = [{
+    Wraps upstream one-shot-bufferize behind a LibTriton pass entry so pipeline
+    customization can evolve without changing Python pipeline strings.
+  }];
+  let options = [
+    Option<"bufferizeFunctionBoundaries", "bufferize-function-boundaries",
+           "bool", "false",
+           "Bufferize function boundaries (forwarded to upstream pass).">,
+    Option<"functionBoundaryTypeConversion",
+           "function-boundary-type-conversion", "std::string",
+           "\"infer-layout-map\"",
+           "Layout map policy for function boundary conversion: "
+           "infer-layout-map | identity-layout-map | fully-dynamic-layout-map.">
+  ];
+}

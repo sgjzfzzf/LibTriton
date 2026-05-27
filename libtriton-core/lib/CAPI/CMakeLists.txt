@@ -11,9 +11,11 @@ add_mlir_public_c_api_library(
   ENABLE_AGGREGATION
   LINK_LIBS
   PUBLIC
+  LibTritonUtilsRegistration
   MLIRConvertToLLVMPass
   DLPackDialect
   DLPackToLLVM
+  LibTritonOneShotBufferize
   MemRefOriginAnalysis
   MLIRIR
   MLIRSupport
