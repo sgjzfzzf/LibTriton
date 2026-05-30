@@ -7,4 +7,5 @@ add_mlir_conversion_library(
   PUBLIC
   MLIRBufferizationTransforms
   MLIRGPUDialect
-  MLIRPass)
+  MLIRPass
+  TorchExtDialect)

@@ -5,8 +5,8 @@ func.func @triton_kernel_launch_with_tensor_and_vtensor(%gx: index, %gy: index, 
   // CHECK: torch_ext.triton_kernel_launch @kernel_tensor_vtensor blocks
   // in(%{{.*}}, %{{.*}}, %{{.*}}) threads in(%{{.*}}, %{{.*}}, %{{.*}})
   // dynamic_shared_memory_size %{{.*}} args(%{{.*}}, %{{.*}} : tensor<4xf32>,
-  // !torch.vtensor<[4],f32>) : index
-    torch_ext.triton_kernel_launch @kernel_tensor_vtensor blocks in(%gx, %gy, %gz) threads in(%bx, %by, %bz) dynamic_shared_memory_size %smem args(%arg0, %arg1 : tensor<4xf32>, !torch.vtensor<[4], f32>) : index
+  // !torch.vtensor<[4],f32>)
+    torch_ext.triton_kernel_launch @kernel_tensor_vtensor blocks in(%gx, %gy, %gz) threads in(%bx, %by, %bz) dynamic_shared_memory_size %smem args(%arg0, %arg1 : tensor<4xf32>, !torch.vtensor<[4], f32>)
     return
 }
 
@@ -15,9 +15,8 @@ func.func @triton_kernel_launch_with_tensor_and_vtensor(%gx: index, %gy: index, 
 // CHECK-LABEL: func.func @triton_kernel_launch_without_dynamic_smem
 func.func @triton_kernel_launch_without_dynamic_smem(%gx: i64, %gy: i64, %gz: i64, %bx: i64, %by: i64, %bz: i64, %arg0: i32) {
   // CHECK: torch_ext.triton_kernel_launch @kernel_no_smem blocks in(%{{.*}},
-  // %{{.*}}, %{{.*}}) threads in(%{{.*}}, %{{.*}}, %{{.*}}) args(%{{.*}} : i32)
-  // : i64
-    torch_ext.triton_kernel_launch @kernel_no_smem blocks in(%gx, %gy, %gz) threads in(%bx, %by, %bz) args(%arg0 : i32) : i64
+  // %{{.*}}, %{{.*}}) threads in(%{{.*}}, %{{.*}}, %{{.*}}) : i64 args(%{{.*}} : i32)
+    torch_ext.triton_kernel_launch @kernel_no_smem blocks in(%gx, %gy, %gz) threads in(%bx, %by, %bz) : i64 args(%arg0 : i32)
     return
 }
 
@@ -39,6 +38,6 @@ func.func @triton_kernel_launch_with_cluster_size(%gx: index, %gy: index, %gz: i
   // CHECK-SAME: clusters in(%{{[^,)]+}}, %{{[^,)]+}}, %{{[^)]+}})
   // CHECK-SAME: blocks in(%{{[^,)]+}}, %{{[^,)]+}}, %{{[^)]+}})
   // CHECK-SAME: threads in(%{{[^,)]+}}, %{{[^,)]+}}, %{{[^)]+}})
-    torch_ext.triton_kernel_launch @kernel_cluster clusters in(%cx, %cy, %cz) blocks in(%gx, %gy, %gz) threads in(%bx, %by, %bz) args(%arg0 : i32) : index
+    torch_ext.triton_kernel_launch @kernel_cluster clusters in(%cx, %cy, %cz) blocks in(%gx, %gy, %gz) threads in(%bx, %by, %bz) args(%arg0 : i32)
     return
 }

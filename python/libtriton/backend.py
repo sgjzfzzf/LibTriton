@@ -377,7 +377,8 @@ class TritonGraphModule(object):
             pipeline: str = TritonGraphModule._build_builtin_pipeline(
                 chip=f"sm_{major}{minor}"
             )
-            passmanager.PassManager.parse(pipeline).run(module.operation)
+            pm = passmanager.PassManager.parse(pipeline)
+            pm.run(module.operation)
             return module
 
     @staticmethod
@@ -424,17 +425,17 @@ class TritonGraphModule(object):
             "func.func(gpu-map-parallel-loops)",
             "convert-parallel-loops-to-gpu",
             "gpu-kernel-outlining",
-            "finalize-memref-to-llvm{use-generic-functions=1}",
+            "finalize-memref-to-llvm{use-generic-functions}",
             f"nvvm-attach-target{{O=3 chip={chip}}}",
             "gpu.module(convert-gpu-to-nvvm{index-bitwidth=64})",
             "torchext-async-kernel-launch",
             "gpu-module-to-binary{format=fatbin}",
             "convert-scf-to-cf",
-            "gpu-to-llvm",
-            "convert-to-llvm",
             "convert-arith-to-llvm",
             "convert-cf-to-llvm",
             "convert-func-to-llvm",
+            "gpu-to-llvm",
+            "convert-to-llvm",
             "func.func(canonicalize, cse)",
             "reconcile-unrealized-casts",
         ]

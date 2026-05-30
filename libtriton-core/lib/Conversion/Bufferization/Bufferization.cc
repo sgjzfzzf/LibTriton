@@ -1,5 +1,6 @@
 #include "libtriton-core/Conversion/Bufferization/Bufferization.h"
 
+#include "libtriton-core/Dialect/TorchExt/IR/TorchExtDialect.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Arith/Transforms/BufferizableOpInterfaceImpl.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
@@ -10,6 +11,7 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/ControlFlow/Transforms/BufferizableOpInterfaceImpl.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/SCF/Transforms/BufferizableOpInterfaceImpl.h"
@@ -26,7 +28,6 @@ namespace libtriton::conversion {
 #include "libtriton-core/Conversion/Passes.h.inc"
 
 namespace {
-
 static mlir::FailureOr<mlir::bufferization::LayoutMapOption>
 parseLayoutMapOption(llvm::StringRef optionText) {
   if (optionText == "infer-layout-map") {
@@ -50,8 +51,9 @@ public:
     registry.insert<mlir::arith::ArithDialect,
                     mlir::bufferization::BufferizationDialect,
                     mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
-                    mlir::memref::MemRefDialect, mlir::scf::SCFDialect,
-                    mlir::tensor::TensorDialect>();
+                    mlir::gpu::GPUDialect, mlir::memref::MemRefDialect,
+                    mlir::scf::SCFDialect, mlir::tensor::TensorDialect,
+                    libtriton::torch_ext::TorchExtDialect>();
     mlir::arith::registerBufferizableOpInterfaceExternalModels(registry);
     mlir::bufferization::func_ext::
         registerBufferizableOpInterfaceExternalModels(registry);
@@ -97,7 +99,6 @@ public:
     if (mlir::failed(mlir::bufferization::runOneShotModuleBufferize(
             moduleOp.getOperation(), options, state))) {
       signalPassFailure();
-      return;
     }
   }
 };

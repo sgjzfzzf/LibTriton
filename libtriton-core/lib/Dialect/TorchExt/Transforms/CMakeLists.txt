@@ -19,7 +19,6 @@ add_mlir_library(
   LINK_LIBS
   PUBLIC
   MLIRGPUDialect
-  MLIRLLVMDialect
   MLIRPass
   TorchExtDialect)
 

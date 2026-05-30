@@ -30,6 +30,14 @@ def TorchExt_TritonKernelLaunchOp : TorchExt_Op<"triton_kernel_launch", [
   let summary = "Launch a Torch kernel entry point";
   let description = [{
     Models launching a Torch kernel symbol with explicit grid/block sizes.
+    Except for TorchExt-specific kernel operand types and the final lowered
+    representation, this op intentionally follows gpu.launch_func semantics for
+    async dependencies/results, grid/block/cluster configuration, and dynamic
+    shared memory behavior.
+    Additional TorchExt invariant: if async dependencies are present, this op
+    must also carry an async token result so lowering can transfer async
+    semantics directly without introducing extra inferred state.
+
     In addition to regular scalar and memref launch arguments, this op also
     supports builtin tensor and torch vtensor operands for staging initial
     TorchExt integration.
@@ -61,18 +69,19 @@ def TorchExt_TritonKernelLaunchOp : TorchExt_Op<"triton_kernel_launch", [
     bool hasClusterSize();
   }];
 
+  let hasVerifier = 1;
+
   let assemblyFormat = [{
-    (`async` `[` $asyncDependencies^ `:` type($asyncDependencies) `]`)?
+    custom<AsyncDependencies>(type($asyncToken), $asyncDependencies)
     (`<` $asyncObject^ `:` type($asyncObject) `>`)?
     $kernel
     (`clusters` `in` `(` $clusterSizeX^ `,` $clusterSizeY `,` $clusterSizeZ `)`)?
     `blocks` `in` `(` $gridSizeX `,` $gridSizeY `,` $gridSizeZ `)`
     `threads` `in` `(` $blockSizeX `,` $blockSizeY `,` $blockSizeZ `)`
+    custom<LaunchDimType>(type($gridSizeX), ref($clusterSizeX), type($clusterSizeX), type($clusterSizeY), type($clusterSizeZ))
     (`dynamic_shared_memory_size` $dynamicSharedMemorySize^)?
     (`args` `(` $kernelOperands^ `:` type($kernelOperands) `)`)?
     attr-dict
-    (`->` type($asyncToken)^)?
-    `:` type($gridSizeX)
   }];
 }
 

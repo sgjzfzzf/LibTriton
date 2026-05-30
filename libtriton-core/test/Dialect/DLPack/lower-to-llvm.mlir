@@ -5,11 +5,11 @@
 
 // CHECK: llvm.func @malloc(i64) -> !llvm.ptr
 
-// CHECK-LABEL: func.func @lower_from_memref
+// CHECK-LABEL: func.func @lower_from_memref_owned
 // CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<(ptr, ptr, i64, array<1 x i64>, array<1 x i64>)>)
 // CHECK-SAME: -> !llvm.struct<packed (struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>
 // CHECK-NOT: llvm.alloca
-func.func @lower_from_memref(%arg0: memref<?xf32>) -> !dlpack.managed_tensor {
+func.func @lower_from_memref_owned(%arg0: memref<?xf32>) -> !dlpack.managed_tensor {
   // Extract data pointer and offset from memref descriptor
   // CHECK: %[[ALIGNED_PTR:.*]] = llvm.extractvalue %[[ARG]][1]
   // CHECK: %[[ALLOCATED_PTR:.*]] = llvm.extractvalue %[[ARG]][0]
@@ -57,10 +57,10 @@ func.func @lower_from_memref(%arg0: memref<?xf32>) -> !dlpack.managed_tensor {
 
 // -----
 
-// CHECK-LABEL: func.func @lower_view
+// CHECK-LABEL: func.func @lower_view_managed_tensor
 // CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>)
 // CHECK-SAME: -> !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
-func.func @lower_view(%arg0: !dlpack.managed_tensor) -> !dlpack.tensor {
+func.func @lower_view_managed_tensor(%arg0: !dlpack.managed_tensor) -> !dlpack.tensor {
   // CHECK: %[[TENSOR_VIEW:.*]] = llvm.extractvalue %[[ARG]][0]
   // CHECK: return %[[TENSOR_VIEW]] : !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
   %0 = dlpack.view %arg0 : !dlpack.managed_tensor -> !dlpack.tensor
@@ -69,10 +69,10 @@ func.func @lower_view(%arg0: !dlpack.managed_tensor) -> !dlpack.tensor {
 
 // -----
 
-// CHECK-LABEL: func.func @lower_to_memref
+// CHECK-LABEL: func.func @lower_to_memref_tensor
 // CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>)
 // CHECK-SAME: -> !llvm.struct<(ptr, ptr, i64, array<1 x i64>, array<1 x i64>)>
-func.func @lower_to_memref(%arg0: !dlpack.tensor) -> memref<?xf32> {
+func.func @lower_to_memref_tensor(%arg0: !dlpack.tensor) -> memref<?xf32> {
   // CHECK: %[[DATA_PTR:.*]] = llvm.extractvalue %[[ARG]][0]
   // CHECK: %[[SHAPE_PTR:.*]] = llvm.extractvalue %[[ARG]][4]
   // CHECK: %[[STRIDE_PTR:.*]] = llvm.extractvalue %[[ARG]][5]
@@ -93,10 +93,10 @@ func.func @lower_to_memref(%arg0: !dlpack.tensor) -> memref<?xf32> {
 
 // -----
 
-// CHECK-LABEL: func.func @lower_ndim
+// CHECK-LABEL: func.func @lower_tensor_ndim
 // CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>)
 // CHECK-SAME: -> i32
-func.func @lower_ndim(%arg0: !dlpack.tensor) -> i32 {
+func.func @lower_tensor_ndim(%arg0: !dlpack.tensor) -> i32 {
   // CHECK: %[[NDIM:.*]] = llvm.extractvalue %[[ARG]][2]
   // CHECK: return %[[NDIM]] : i32
   %0 = dlpack.ndim %arg0 : !dlpack.tensor -> i32
@@ -105,10 +105,10 @@ func.func @lower_ndim(%arg0: !dlpack.tensor) -> i32 {
 
 // -----
 
-// CHECK-LABEL: func.func @lower_shape
+// CHECK-LABEL: func.func @lower_tensor_shape
 // CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>, %[[IDX:.*]]: i64)
 // CHECK-SAME: -> i64
-func.func @lower_shape(%arg0: !dlpack.tensor, %arg1: index) -> i64 {
+func.func @lower_tensor_shape(%arg0: !dlpack.tensor, %arg1: index) -> i64 {
   // CHECK: %[[SHAPE_PTR:.*]] = llvm.extractvalue %[[ARG]][4]
   // CHECK: %[[SHAPE_GEP:.*]] = llvm.getelementptr %[[SHAPE_PTR]][%[[IDX]]]
   // CHECK: %[[SHAPE:.*]] = llvm.load %[[SHAPE_GEP]]
@@ -119,10 +119,10 @@ func.func @lower_shape(%arg0: !dlpack.tensor, %arg1: index) -> i64 {
 
 // -----
 
-// CHECK-LABEL: func.func @lower_strides
+// CHECK-LABEL: func.func @lower_tensor_strides
 // CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>, %[[IDX:.*]]: i64)
 // CHECK-SAME: -> i64
-func.func @lower_strides(%arg0: !dlpack.tensor, %arg1: index) -> i64 {
+func.func @lower_tensor_strides(%arg0: !dlpack.tensor, %arg1: index) -> i64 {
   // CHECK: %[[STRIDES_PTR:.*]] = llvm.extractvalue %[[ARG]][5]
   // CHECK: %[[STRIDES_GEP:.*]] = llvm.getelementptr %[[STRIDES_PTR]][%[[IDX]]]
   // CHECK: %[[STRIDE:.*]] = llvm.load %[[STRIDES_GEP]]
@@ -133,10 +133,10 @@ func.func @lower_strides(%arg0: !dlpack.tensor, %arg1: index) -> i64 {
 
 // -----
 
-// CHECK-LABEL: func.func @lower_byte_offset
+// CHECK-LABEL: func.func @lower_tensor_byte_offset
 // CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>)
 // CHECK-SAME: -> i64
-func.func @lower_byte_offset(%arg0: !dlpack.tensor) -> i64 {
+func.func @lower_tensor_byte_offset(%arg0: !dlpack.tensor) -> i64 {
   // CHECK: %[[OFFSET:.*]] = llvm.extractvalue %[[ARG]][6]
   // CHECK: return %[[OFFSET]] : i64
   %0 = dlpack.byte_offset %arg0 : !dlpack.tensor -> i64
@@ -145,10 +145,10 @@ func.func @lower_byte_offset(%arg0: !dlpack.tensor) -> i64 {
 
 // -----
 
-// CHECK-LABEL: func.func @lower_dtype
+// CHECK-LABEL: func.func @lower_tensor_dtype
 // CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>)
 // CHECK-SAME: -> !llvm.struct<packed (i8, i8, i16)>
-func.func @lower_dtype(%arg0: !dlpack.tensor) -> !dlpack.datatype {
+func.func @lower_tensor_dtype(%arg0: !dlpack.tensor) -> !dlpack.datatype {
   // CHECK: %[[DTYPE:.*]] = llvm.extractvalue %[[ARG]][3]
   // CHECK: return %[[DTYPE]] : !llvm.struct<packed (i8, i8, i16)>
   %0 = dlpack.dtype %arg0 : !dlpack.tensor -> !dlpack.datatype
@@ -157,9 +157,9 @@ func.func @lower_dtype(%arg0: !dlpack.tensor) -> !dlpack.datatype {
 
 // -----
 
-// CHECK-LABEL: func.func @lower_dtype_code
+// CHECK-LABEL: func.func @lower_datatype_code
 // CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (i8, i8, i16)>) -> i8
-func.func @lower_dtype_code(%arg0: !dlpack.datatype) -> i8 {
+func.func @lower_datatype_code(%arg0: !dlpack.datatype) -> i8 {
   // CHECK: %[[CODE:.*]] = llvm.extractvalue %[[ARG]][0]
   // CHECK: return %[[CODE]] : i8
   %0 = dlpack.dtype_code %arg0 : !dlpack.datatype -> i8
@@ -168,9 +168,9 @@ func.func @lower_dtype_code(%arg0: !dlpack.datatype) -> i8 {
 
 // -----
 
-// CHECK-LABEL: func.func @lower_dtype_bits
+// CHECK-LABEL: func.func @lower_datatype_bits
 // CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (i8, i8, i16)>) -> i8
-func.func @lower_dtype_bits(%arg0: !dlpack.datatype) -> i8 {
+func.func @lower_datatype_bits(%arg0: !dlpack.datatype) -> i8 {
   // CHECK: %[[BITS:.*]] = llvm.extractvalue %[[ARG]][1]
   // CHECK: return %[[BITS]] : i8
   %0 = dlpack.dtype_bits %arg0 : !dlpack.datatype -> i8
@@ -179,9 +179,9 @@ func.func @lower_dtype_bits(%arg0: !dlpack.datatype) -> i8 {
 
 // -----
 
-// CHECK-LABEL: func.func @lower_dtype_lanes
+// CHECK-LABEL: func.func @lower_datatype_lanes
 // CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (i8, i8, i16)>) -> i16
-func.func @lower_dtype_lanes(%arg0: !dlpack.datatype) -> i16 {
+func.func @lower_datatype_lanes(%arg0: !dlpack.datatype) -> i16 {
   // CHECK: %[[LANES:.*]] = llvm.extractvalue %[[ARG]][2]
   // CHECK: return %[[LANES]] : i16
   %0 = dlpack.dtype_lanes %arg0 : !dlpack.datatype -> i16
@@ -190,10 +190,10 @@ func.func @lower_dtype_lanes(%arg0: !dlpack.datatype) -> i16 {
 
 // -----
 
-// CHECK-LABEL: func.func @lower_device
+// CHECK-LABEL: func.func @lower_tensor_device
 // CHECK-SAME: (%[[ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>)
 // CHECK-SAME: -> !llvm.struct<packed (i32, i32)>
-func.func @lower_device(%arg0: !dlpack.tensor) -> !dlpack.device {
+func.func @lower_tensor_device(%arg0: !dlpack.tensor) -> !dlpack.device {
   // CHECK: %[[DEVICE:.*]] = llvm.extractvalue %[[ARG]][1]
   // CHECK: return %[[DEVICE]] : !llvm.struct<packed (i32, i32)>
   %0 = dlpack.device %arg0 : !dlpack.tensor -> !dlpack.device

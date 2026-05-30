@@ -3,8 +3,6 @@
 
 #include "libtriton-core/Dialect/TorchExt/IR/TorchExtDialect.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassRegistry.h"

@@ -14,13 +14,13 @@ def NormalizeTorchExtOperands
 }
 
 def AsyncKernelLaunch : Pass<"torchext-async-kernel-launch", "mlir::ModuleOp"> {
-  let summary = "Ensure kernel launch ops carry an async token";
+  let summary = "Materialize current-stream async tokens for TorchExt";
   // clang-format off
   let description = [{
     Rewrites gpu.launch_func and torch_ext.triton_kernel_launch in a module.
-    If the optional async token is not provided, this pass materializes
-    torch_ext.get_current_stream and wires the resulting token into async token
-    positions on launch operations.
+    If launch async information is not provided, this pass inserts
+    torch_ext.get_current_stream and wires the produced !gpu.async.token as an
+    async dependency.
   }];
   // clang-format on
   let dependentDialects =

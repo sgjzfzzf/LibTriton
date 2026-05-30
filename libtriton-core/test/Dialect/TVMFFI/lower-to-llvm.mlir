@@ -7,9 +7,9 @@
 // CHECK-DAG: llvm.func @TVMFFITensorFromDLPack
 // CHECK-DAG: llvm.func @__libtriton_tvmffi_env_tensor_alloc
 
-// CHECK-LABEL: func.func @lowering_from_int
+// CHECK-LABEL: func.func @lower_any_from_i64
 // CHECK-SAME: (%[[FROM_INT_ARG:.*]]: i64) -> !llvm.struct<(i32, i32, i64)>
-func.func @lowering_from_int(%i: i64) -> !tvm_ffi.any {
+func.func @lower_any_from_i64(%i: i64) -> !tvm_ffi.any {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: %[[FROM_INT_TYPE:.*]] = llvm.mlir.constant(1 : i32) : i32
@@ -23,9 +23,9 @@ func.func @lowering_from_int(%i: i64) -> !tvm_ffi.any {
   return %0 : !tvm_ffi.any
 }
 
-// CHECK-LABEL: func.func @lowering_to_int
+// CHECK-LABEL: func.func @lower_i64_from_any
 // CHECK-SAME: (%[[TO_INT_ARG:.*]]: !llvm.struct<(i32, i32, i64)>) -> i64
-func.func @lowering_to_int(%a: !tvm_ffi.any) -> i64 {
+func.func @lower_i64_from_any(%a: !tvm_ffi.any) -> i64 {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: %[[TO_INT_VALUE:.*]] = llvm.extractvalue %[[TO_INT_ARG]][2] : !llvm.struct<(i32, i32, i64)>
@@ -34,9 +34,9 @@ func.func @lowering_to_int(%a: !tvm_ffi.any) -> i64 {
   return %0 : i64
 }
 
-// CHECK-LABEL: func.func @lowering_from_i32
+// CHECK-LABEL: func.func @lower_any_from_i32
 // CHECK-SAME: (%[[FROM_I32_ARG:.*]]: i32) -> !llvm.struct<(i32, i32, i64)>
-func.func @lowering_from_i32(%i: i32) -> !tvm_ffi.any {
+func.func @lower_any_from_i32(%i: i32) -> !tvm_ffi.any {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: %[[FROM_I32_TYPE:.*]] = llvm.mlir.constant(1 : i32) : i32
@@ -51,9 +51,9 @@ func.func @lowering_from_i32(%i: i32) -> !tvm_ffi.any {
   return %0 : !tvm_ffi.any
 }
 
-// CHECK-LABEL: func.func @lowering_as_from_llvm
+// CHECK-LABEL: func.func @lower_any_from_llvm_struct
 // CHECK-SAME: (%[[AS_FROM_LLVM_ARG:.*]]: !llvm.struct<(i32, i32, i64)>) -> !llvm.struct<(i32, i32, i64)>
-func.func @lowering_as_from_llvm(%a: !llvm.struct<(i32, i32, i64)>) -> !tvm_ffi.any {
+func.func @lower_any_from_llvm_struct(%a: !llvm.struct<(i32, i32, i64)>) -> !tvm_ffi.any {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: return %[[AS_FROM_LLVM_ARG]] : !llvm.struct<(i32, i32, i64)>
@@ -61,9 +61,9 @@ func.func @lowering_as_from_llvm(%a: !llvm.struct<(i32, i32, i64)>) -> !tvm_ffi.
   return %0 : !tvm_ffi.any
 }
 
-// CHECK-LABEL: func.func @lowering_as_to_llvm
+// CHECK-LABEL: func.func @lower_llvm_struct_from_any
 // CHECK-SAME: (%[[AS_TO_LLVM_ARG:.*]]: !llvm.struct<(i32, i32, i64)>) -> !llvm.struct<(i32, i32, i64)>
-func.func @lowering_as_to_llvm(%a: !tvm_ffi.any) -> !llvm.struct<(i32, i32, i64)> {
+func.func @lower_llvm_struct_from_any(%a: !tvm_ffi.any) -> !llvm.struct<(i32, i32, i64)> {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: return %[[AS_TO_LLVM_ARG]] : !llvm.struct<(i32, i32, i64)>
@@ -71,9 +71,9 @@ func.func @lowering_as_to_llvm(%a: !tvm_ffi.any) -> !llvm.struct<(i32, i32, i64)
   return %0 : !llvm.struct<(i32, i32, i64)>
 }
 
-// CHECK-LABEL: func.func @lowering_from_float
+// CHECK-LABEL: func.func @lower_any_from_f64
 // CHECK-SAME: (%[[FROM_FLOAT_ARG:.*]]: f64) -> !llvm.struct<(i32, i32, i64)>
-func.func @lowering_from_float(%f: f64) -> !tvm_ffi.any {
+func.func @lower_any_from_f64(%f: f64) -> !tvm_ffi.any {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: %[[FROM_FLOAT_TYPE:.*]] = llvm.mlir.constant(3 : i32) : i32
@@ -88,9 +88,9 @@ func.func @lowering_from_float(%f: f64) -> !tvm_ffi.any {
   return %0 : !tvm_ffi.any
 }
 
-// CHECK-LABEL: func.func @lowering_get_type_index
+// CHECK-LABEL: func.func @lower_type_index_from_any
 // CHECK-SAME: (%[[GET_TYPE_INDEX_ARG:.*]]: !llvm.struct<(i32, i32, i64)>) -> i32
-func.func @lowering_get_type_index(%a: !tvm_ffi.any) -> i32 {
+func.func @lower_type_index_from_any(%a: !tvm_ffi.any) -> i32 {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: %[[GET_TYPE_INDEX_VALUE:.*]] = llvm.extractvalue %[[GET_TYPE_INDEX_ARG]][0] : !llvm.struct<(i32, i32, i64)>
@@ -99,9 +99,9 @@ func.func @lowering_get_type_index(%a: !tvm_ffi.any) -> i32 {
   return %0 : i32
 }
 
-// CHECK-LABEL: func.func @lowering_to_float
+// CHECK-LABEL: func.func @lower_f64_from_any
 // CHECK-SAME: (%[[TO_FLOAT_ARG:.*]]: !llvm.struct<(i32, i32, i64)>) -> f64
-func.func @lowering_to_float(%a: !tvm_ffi.any) -> f64 {
+func.func @lower_f64_from_any(%a: !tvm_ffi.any) -> f64 {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: %[[TO_FLOAT_BITS:.*]] = llvm.extractvalue %[[TO_FLOAT_ARG]][2] : !llvm.struct<(i32, i32, i64)>
@@ -111,9 +111,9 @@ func.func @lowering_to_float(%a: !tvm_ffi.any) -> f64 {
   return %0 : f64
 }
 
-// CHECK-LABEL: func.func @lowering_from_str
+// CHECK-LABEL: func.func @lower_any_from_ptr
 // CHECK-SAME: (%[[FROM_STR_ARG:.*]]: !llvm.ptr) -> !llvm.struct<(i32, i32, i64)>
-func.func @lowering_from_str(%p: !llvm.ptr) -> !tvm_ffi.any {
+func.func @lower_any_from_ptr(%p: !llvm.ptr) -> !tvm_ffi.any {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: %[[FROM_STR_TYPE:.*]] = llvm.mlir.constant(8 : i32) : i32
@@ -128,9 +128,9 @@ func.func @lowering_from_str(%p: !llvm.ptr) -> !tvm_ffi.any {
   return %0 : !tvm_ffi.any
 }
 
-// CHECK-LABEL: func.func @lowering_to_str
+// CHECK-LABEL: func.func @lower_ptr_from_any
 // CHECK-SAME: (%[[TO_STR_ARG:.*]]: !llvm.struct<(i32, i32, i64)>) -> !llvm.ptr
-func.func @lowering_to_str(%a: !tvm_ffi.any) -> !llvm.ptr {
+func.func @lower_ptr_from_any(%a: !tvm_ffi.any) -> !llvm.ptr {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: %[[TO_STR_BITS:.*]] = llvm.extractvalue %[[TO_STR_ARG]][2] : !llvm.struct<(i32, i32, i64)>
@@ -140,9 +140,9 @@ func.func @lowering_to_str(%a: !tvm_ffi.any) -> !llvm.ptr {
   return %0 : !llvm.ptr
 }
 
-// CHECK-LABEL: func.func @lowering_error_set_raised_from_c_str
+// CHECK-LABEL: func.func @lower_error_set_from_c_str
 // CHECK-SAME: (%[[ERROR_KIND:.*]]: !llvm.ptr, %[[ERROR_MESSAGE:.*]]: !llvm.ptr)
-func.func @lowering_error_set_raised_from_c_str(%kind: !llvm.ptr, %message: !llvm.ptr) {
+func.func @lower_error_set_from_c_str(%kind: !llvm.ptr, %message: !llvm.ptr) {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: llvm.call @TVMFFIErrorSetRaisedFromCStr(%[[ERROR_KIND]], %[[ERROR_MESSAGE]]) : (!llvm.ptr, !llvm.ptr) -> ()
@@ -151,9 +151,9 @@ func.func @lowering_error_set_raised_from_c_str(%kind: !llvm.ptr, %message: !llv
   return
 }
 
-// CHECK-LABEL: func.func @lowering_object_inc_ref
+// CHECK-LABEL: func.func @lower_object_handle_inc_ref
 // CHECK-SAME: (%[[OBJ:.*]]: !llvm.ptr)
-func.func @lowering_object_inc_ref(%obj: !tvm_ffi.object_handle) {
+func.func @lower_object_handle_inc_ref(%obj: !tvm_ffi.object_handle) {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: llvm.call @TVMFFIObjectIncRef(%[[OBJ]]) : (!llvm.ptr) -> i32
@@ -162,9 +162,9 @@ func.func @lowering_object_inc_ref(%obj: !tvm_ffi.object_handle) {
   return
 }
 
-// CHECK-LABEL: func.func @lowering_object_dec_ref
+// CHECK-LABEL: func.func @lower_object_handle_dec_ref
 // CHECK-SAME: (%[[OBJ:.*]]: !llvm.ptr)
-func.func @lowering_object_dec_ref(%obj: !tvm_ffi.object_handle) {
+func.func @lower_object_handle_dec_ref(%obj: !tvm_ffi.object_handle) {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: llvm.call @TVMFFIObjectDecRef(%[[OBJ]]) : (!llvm.ptr) -> i32
@@ -173,11 +173,11 @@ func.func @lowering_object_dec_ref(%obj: !tvm_ffi.object_handle) {
   return
 }
 
-// CHECK-LABEL: func.func @lowering_from_tensor
+// CHECK-LABEL: func.func @lower_any_from_managed_tensor
 // CHECK-SAME: (%[[FROM_DLPACK_ARG:.*]]: !llvm.struct<packed (struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>, ptr, ptr)>, %[[FROM_TENSOR_ALIGN:.*]]: i32, %[[FROM_TENSOR_CONTIG:.*]]: i32)
 // CHECK-SAME: -> !llvm.struct<(i32, i32, i64)>
-// NO-CAST-LABEL: func.func @lowering_from_tensor
-func.func @lowering_from_tensor(%from: !dlpack.managed_tensor, %align: i32, %contig: i32) -> !tvm_ffi.any {
+// NO-CAST-LABEL: func.func @lower_any_from_managed_tensor
+func.func @lower_any_from_managed_tensor(%from: !dlpack.managed_tensor, %align: i32, %contig: i32) -> !tvm_ffi.any {
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // NO-CAST-NOT: builtin.unrealized_conversion_cast
   // CHECK: %[[ONE:.*]] = llvm.mlir.constant(1 : i64)
@@ -205,11 +205,11 @@ func.func @lowering_from_tensor(%from: !dlpack.managed_tensor, %align: i32, %con
   return %0 : !tvm_ffi.any
 }
 
-// CHECK-LABEL: func.func @lowering_to_tensor
+// CHECK-LABEL: func.func @lower_tensor_from_any
 // CHECK-SAME: (%[[TO_TENSOR_ARG:.*]]: !llvm.struct<(i32, i32, i64)>)
 // CHECK-SAME: -> !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
-// NO-CAST-LABEL: func.func @lowering_to_tensor
-func.func @lowering_to_tensor(%a: !tvm_ffi.any) -> !dlpack.tensor {
+// NO-CAST-LABEL: func.func @lower_tensor_from_any
+func.func @lower_tensor_from_any(%a: !tvm_ffi.any) -> !dlpack.tensor {
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // NO-CAST-NOT: builtin.unrealized_conversion_cast
   // CHECK-DAG: %[[TYPE_INDEX:.*]] = llvm.extractvalue %[[TO_TENSOR_ARG]][0]
@@ -228,9 +228,9 @@ func.func @lowering_to_tensor(%a: !tvm_ffi.any) -> !dlpack.tensor {
   return %0 : !dlpack.tensor
 }
 
-// CHECK-LABEL: func.func @lowering_from_object
+// CHECK-LABEL: func.func @lower_any_from_object_handle
 // CHECK-SAME: (%[[FROM_OBJECT_ARG:.*]]: !llvm.ptr) -> !llvm.struct<(i32, i32, i64)>
-func.func @lowering_from_object(%h: !tvm_ffi.object_handle) -> !tvm_ffi.any {
+func.func @lower_any_from_object_handle(%h: !tvm_ffi.object_handle) -> !tvm_ffi.any {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: %[[FROM_OBJECT_TYPE:.*]] = llvm.mlir.constant(70 : i32) : i32
@@ -245,9 +245,9 @@ func.func @lowering_from_object(%h: !tvm_ffi.object_handle) -> !tvm_ffi.any {
   return %0 : !tvm_ffi.any
 }
 
-// CHECK-LABEL: func.func @lowering_to_object
+// CHECK-LABEL: func.func @lower_object_handle_from_any
 // CHECK-SAME: (%[[TO_OBJECT_ARG:.*]]: !llvm.struct<(i32, i32, i64)>) -> !llvm.ptr
-func.func @lowering_to_object(%a: !tvm_ffi.any) -> !tvm_ffi.object_handle {
+func.func @lower_object_handle_from_any(%a: !tvm_ffi.any) -> !tvm_ffi.object_handle {
   // CHECK-NOT: tvm_ffi.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: %[[TO_OBJECT_BITS:.*]] = llvm.extractvalue %[[TO_OBJECT_ARG]][2] : !llvm.struct<(i32, i32, i64)>
@@ -257,10 +257,10 @@ func.func @lowering_to_object(%a: !tvm_ffi.any) -> !tvm_ffi.object_handle {
   return %0 : !tvm_ffi.object_handle
 }
 
-// CHECK-LABEL: func.func @lowering_tensor_from_llvm
+// CHECK-LABEL: func.func @lower_tensor_from_llvm_struct
 // CHECK-SAME: (%[[TENSOR_FROM_LLVM_ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>)
 // CHECK-SAME: -> !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
-func.func @lowering_tensor_from_llvm(%x: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>) -> !dlpack.tensor {
+func.func @lower_tensor_from_llvm_struct(%x: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>) -> !dlpack.tensor {
   // CHECK-NOT: dlpack.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: return %[[TENSOR_FROM_LLVM_ARG]] : !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
@@ -268,10 +268,10 @@ func.func @lowering_tensor_from_llvm(%x: !llvm.struct<packed (ptr, struct<packed
   return %0 : !dlpack.tensor
 }
 
-// CHECK-LABEL: func.func @lowering_tensor_to_llvm
+// CHECK-LABEL: func.func @lower_llvm_struct_from_tensor
 // CHECK-SAME: (%[[TENSOR_TO_LLVM_ARG:.*]]: !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>)
 // CHECK-SAME: -> !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
-func.func @lowering_tensor_to_llvm(%x: !dlpack.tensor) -> !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)> {
+func.func @lower_llvm_struct_from_tensor(%x: !dlpack.tensor) -> !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)> {
   // CHECK-NOT: dlpack.
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: return %[[TENSOR_TO_LLVM_ARG]] : !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
@@ -279,9 +279,9 @@ func.func @lowering_tensor_to_llvm(%x: !dlpack.tensor) -> !llvm.struct<packed (p
   return %0 : !llvm.struct<packed (ptr, struct<packed (i32, i32)>, i32, struct<packed (i8, i8, i16)>, ptr, ptr, i64)>
 }
 
-// CHECK-LABEL: func.func @lowering_env_tensor_alloc
+// CHECK-LABEL: func.func @lower_object_handle_env_tensor_alloc
 // CHECK-SAME: () -> !llvm.ptr
-func.func @lowering_env_tensor_alloc() -> !tvm_ffi.object_handle {
+func.func @lower_object_handle_env_tensor_alloc() -> !tvm_ffi.object_handle {
   // CHECK-NOT: builtin.unrealized_conversion_cast
   // CHECK: %[[SHAPE_SIZE:.*]] = llvm.mlir.constant(2 : i64)
   // CHECK: %[[SHAPE_SLOT:.*]] = llvm.alloca %[[SHAPE_SIZE]] x i64 : (i64) -> !llvm.ptr

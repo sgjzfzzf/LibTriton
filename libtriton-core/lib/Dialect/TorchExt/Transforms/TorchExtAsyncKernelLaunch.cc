@@ -16,40 +16,6 @@ namespace libtriton::torch_ext {
 
 namespace {
 
-static mlir::Value createCurrentStreamValue(mlir::OpBuilder &builder,
-                                            mlir::Location loc) {
-  return GetCurrentStreamOp::create(
-             builder, loc, mlir::gpu::AsyncTokenType::get(builder.getContext()))
-      .getOutput();
-}
-
-class GpuLaunchFuncAsyncPattern
-    : public mlir::OpRewritePattern<mlir::gpu::LaunchFuncOp> {
-public:
-  using mlir::OpRewritePattern<mlir::gpu::LaunchFuncOp>::OpRewritePattern;
-
-  mlir::LogicalResult
-  matchAndRewrite(mlir::gpu::LaunchFuncOp launchOp,
-                  mlir::PatternRewriter &rewriter) const final {
-    if (launchOp.getAsyncToken()) {
-      return mlir::failure();
-    }
-    std::optional<mlir::gpu::KernelDim3> clusterSize = std::nullopt;
-    if (launchOp.hasClusterSize()) {
-      clusterSize = launchOp.getClusterSizeOperandValues();
-    }
-    rewriter.replaceOpWithNewOp<mlir::gpu::LaunchFuncOp>(
-        launchOp, launchOp.getKernelAttr(), launchOp.getGridSizeOperandValues(),
-        launchOp.getBlockSizeOperandValues(),
-        launchOp.getDynamicSharedMemorySize(), launchOp.getKernelOperands(),
-        mlir::gpu::AsyncTokenType::get(rewriter.getContext()),
-        llvm::SmallVector<mlir::Value>{
-            createCurrentStreamValue(rewriter, launchOp.getLoc())},
-        clusterSize);
-    return mlir::success();
-  }
-};
-
 class TritonLaunchAsyncTokenPattern
     : public mlir::OpRewritePattern<TritonKernelLaunchOp> {
 public:
@@ -58,20 +24,24 @@ public:
   mlir::LogicalResult
   matchAndRewrite(TritonKernelLaunchOp launchOp,
                   mlir::PatternRewriter &rewriter) const final {
-    if (launchOp.getAsyncToken()) {
+    if (!launchOp.getAsyncDependencies().empty() || launchOp.getAsyncToken() ||
+        launchOp.getAsyncObject()) {
       return mlir::failure();
     }
+    mlir::Type asyncTokenType =
+        mlir::gpu::AsyncTokenType::get(rewriter.getContext());
+    GetCurrentStreamOp streamOp =
+        GetCurrentStreamOp::create(rewriter, launchOp.getLoc(), asyncTokenType,
+                                   rewriter.getI8IntegerAttr(-1));
     rewriter.replaceOpWithNewOp<TritonKernelLaunchOp>(
-        launchOp, mlir::gpu::AsyncTokenType::get(rewriter.getContext()),
-        llvm::SmallVector<mlir::Value>{
-            createCurrentStreamValue(rewriter, launchOp.getLoc())},
-        launchOp.getKernelAttr(), launchOp.getGridSizeX(),
-        launchOp.getGridSizeY(), launchOp.getGridSizeZ(),
-        launchOp.getBlockSizeX(), launchOp.getBlockSizeY(),
-        launchOp.getBlockSizeZ(), launchOp.getClusterSizeX(),
-        launchOp.getClusterSizeY(), launchOp.getClusterSizeZ(),
-        launchOp.getDynamicSharedMemorySize(), launchOp.getKernelOperands(),
-        launchOp.getAsyncObject());
+        launchOp, mlir::TypeRange{asyncTokenType},
+        llvm::SmallVector<mlir::Value>{streamOp}, launchOp.getKernelAttr(),
+        launchOp.getGridSizeX(), launchOp.getGridSizeY(),
+        launchOp.getGridSizeZ(), launchOp.getBlockSizeX(),
+        launchOp.getBlockSizeY(), launchOp.getBlockSizeZ(),
+        launchOp.getClusterSizeX(), launchOp.getClusterSizeY(),
+        launchOp.getClusterSizeZ(), launchOp.getDynamicSharedMemorySize(),
+        launchOp.getKernelOperands(), mlir::Value{});
     return mlir::success();
   }
 };
@@ -83,8 +53,7 @@ public:
     mlir::MLIRContext &context = getContext();
     mlir::ModuleOp moduleOp = getOperation();
     mlir::RewritePatternSet patterns(&context);
-    patterns.add<GpuLaunchFuncAsyncPattern, TritonLaunchAsyncTokenPattern>(
-        &context);
+    patterns.add<TritonLaunchAsyncTokenPattern>(&context);
     if (mlir::failed(
             mlir::applyPatternsGreedily(moduleOp, std::move(patterns)))) {
       signalPassFailure();

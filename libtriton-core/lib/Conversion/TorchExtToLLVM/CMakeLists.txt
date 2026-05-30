@@ -5,7 +5,7 @@ add_mlir_conversion_library(
   MLIRConversionPassIncGen
   LINK_LIBS
   PUBLIC
-  MLIRGPUDialect
+  DLPackToLLVM
   MLIRLLVMCommonConversion
   MLIRLLVMDialect
   MLIRPass

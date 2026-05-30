@@ -11,16 +11,15 @@ def ConvertTVMFFIToLLVM : Pass<"convert-tvm-ffi-to-llvm", "mlir::ModuleOp"> {
 }
 
 def ConvertTorchExtToLLVM : Pass<"convert-torchext-to-llvm", "mlir::ModuleOp"> {
-  let summary = "Lower TorchExt launch op to GPU/LLVM-compatible form";
-  let description =
-      [{Rewrites torch_ext.triton_kernel_launch into
-            gpu.launch_func.Kernel operands that are LLVM memref -
-        descriptor -
-        like structs are lowered to their aligned pointer field(index 1)
-            .Other scalar -
-        like operands are preserved
-            .Two trailing null pointers are appended to satisfy Torch kernel ABI
-                conventions.}];
+  let summary =
+      "Lower TorchExt launch and runtime ops to GPU/LLVM-compatible form";
+  // clang-format off
+  let description = [{
+    Rewrites torch_ext.triton_kernel_launch into gpu.launch_func while keeping
+      async launch semantics, and lowers torch_ext.get_current_device and
+      torch_ext.get_current_stream into LibTriton runtime C API calls.
+  }];
+  // clang-format on
   let dependentDialects = [
     "libtriton::torch_ext::TorchExtDialect", "mlir::func::FuncDialect",
     "mlir::gpu::GPUDialect", "mlir::LLVM::LLVMDialect"
@@ -36,6 +35,8 @@ def LibTritonOneShotBufferize
     customization can evolve without changing Python pipeline strings.
   }];
   // clang-format on
+  let dependentDialects =
+      ["libtriton::torch_ext::TorchExtDialect", "mlir::gpu::GPUDialect"];
   let options = [
     Option<"bufferizeFunctionBoundaries", "bufferize-function-boundaries",
            "bool", "false",

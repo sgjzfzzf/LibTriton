@@ -4,19 +4,19 @@
 module {
   // Static + dynamic tensor arguments/results should bufferize at function
   // boundaries.
-  func.func @id_mixed(%arg0: tensor<4xf32>, %arg1: tensor<?xf32>) -> (tensor<4xf32>, tensor<?xf32>) {
+  func.func @mixed_static_dynamic_identity(%arg0: tensor<4xf32>, %arg1: tensor<?xf32>) -> (tensor<4xf32>, tensor<?xf32>) {
     return %arg0, %arg1 : tensor<4xf32>, tensor<?xf32>
   }
 
   // Call graph rewriting should keep signatures and call operands/results
   // consistent after tensor->memref conversion.
-  func.func @call_id_mixed(%arg0: tensor<4xf32>, %arg1: tensor<?xf32>) -> (tensor<4xf32>, tensor<?xf32>) {
-    %0:2 = call @id_mixed(%arg0, %arg1) : (tensor<4xf32>, tensor<?xf32>) -> (tensor<4xf32>, tensor<?xf32>)
+  func.func @call_mixed_static_dynamic_identity(%arg0: tensor<4xf32>, %arg1: tensor<?xf32>) -> (tensor<4xf32>, tensor<?xf32>) {
+    %0:2 = call @mixed_static_dynamic_identity(%arg0, %arg1) : (tensor<4xf32>, tensor<?xf32>) -> (tensor<4xf32>, tensor<?xf32>)
     return %0#0, %0#1 : tensor<4xf32>, tensor<?xf32>
   }
 
   // Single-result dynamic tensor return should also be converted.
-  func.func @id_dynamic(%arg0: tensor<?xf32>) -> tensor<?xf32> {
+  func.func @dynamic_identity(%arg0: tensor<?xf32>) -> tensor<?xf32> {
     return %arg0 : tensor<?xf32>
   }
 
@@ -38,16 +38,16 @@ module {
   }
 }
 
-// IDENTITY-LABEL: func.func @id_mixed(
+// IDENTITY-LABEL: func.func @mixed_static_dynamic_identity(
 // IDENTITY-SAME: %[[S0:.+]]: memref<4xf32>, %[[D0:.+]]: memref<?xf32>) -> (memref<4xf32>, memref<?xf32>)
 // IDENTITY: return %[[S0]], %[[D0]] : memref<4xf32>, memref<?xf32>
 
-// IDENTITY-LABEL: func.func @call_id_mixed(
+// IDENTITY-LABEL: func.func @call_mixed_static_dynamic_identity(
 // IDENTITY-SAME: %[[S1:.+]]: memref<4xf32>, %[[D1:.+]]: memref<?xf32>) -> (memref<4xf32>, memref<?xf32>)
-// IDENTITY: %[[R:.+]]:2 = call @id_mixed(%[[S1]], %[[D1]]) : (memref<4xf32>, memref<?xf32>) -> (memref<4xf32>, memref<?xf32>)
+// IDENTITY: %[[R:.+]]:2 = call @mixed_static_dynamic_identity(%[[S1]], %[[D1]]) : (memref<4xf32>, memref<?xf32>) -> (memref<4xf32>, memref<?xf32>)
 // IDENTITY: return %[[R]]#0, %[[R]]#1 : memref<4xf32>, memref<?xf32>
 
-// IDENTITY-LABEL: func.func @id_dynamic(
+// IDENTITY-LABEL: func.func @dynamic_identity(
 // IDENTITY-SAME: %[[D2:.+]]: memref<?xf32>) -> memref<?xf32>
 // IDENTITY: return %[[D2]] : memref<?xf32>
 
@@ -64,16 +64,16 @@ module {
 // IDENTITY: memref.store %[[V1]], %[[A1]]
 // IDENTITY: return %[[A1]] : memref<?xf32>
 
-// INFER-LABEL: func.func @id_mixed(
+// INFER-LABEL: func.func @mixed_static_dynamic_identity(
 // INFER-SAME: %[[S3:.+]]: memref<4xf32, strided<[?], offset: ?>>, %[[D3:.+]]: memref<?xf32, strided<[?], offset: ?>>) -> (memref<4xf32, strided<[?], offset: ?>>, memref<?xf32, strided<[?], offset: ?>>)
 // INFER: return %[[S3]], %[[D3]] : memref<4xf32, strided<[?], offset: ?>>, memref<?xf32, strided<[?], offset: ?>>
 
-// INFER-LABEL: func.func @call_id_mixed(
+// INFER-LABEL: func.func @call_mixed_static_dynamic_identity(
 // INFER-SAME: %[[S4:.+]]: memref<4xf32, strided<[?], offset: ?>>, %[[D4:.+]]: memref<?xf32, strided<[?], offset: ?>>) -> (memref<4xf32, strided<[?], offset: ?>>, memref<?xf32, strided<[?], offset: ?>>)
-// INFER: %[[R2:.+]]:2 = call @id_mixed(%[[S4]], %[[D4]]) : (memref<4xf32, strided<[?], offset: ?>>, memref<?xf32, strided<[?], offset: ?>>) -> (memref<4xf32, strided<[?], offset: ?>>, memref<?xf32, strided<[?], offset: ?>>)
+// INFER: %[[R2:.+]]:2 = call @mixed_static_dynamic_identity(%[[S4]], %[[D4]]) : (memref<4xf32, strided<[?], offset: ?>>, memref<?xf32, strided<[?], offset: ?>>) -> (memref<4xf32, strided<[?], offset: ?>>, memref<?xf32, strided<[?], offset: ?>>)
 // INFER: return %[[R2]]#0, %[[R2]]#1 : memref<4xf32, strided<[?], offset: ?>>, memref<?xf32, strided<[?], offset: ?>>
 
-// INFER-LABEL: func.func @id_dynamic(
+// INFER-LABEL: func.func @dynamic_identity(
 // INFER-SAME: %[[D5:.+]]: memref<?xf32, strided<[?], offset: ?>>) -> memref<?xf32, strided<[?], offset: ?>>
 // INFER: return %[[D5]] : memref<?xf32, strided<[?], offset: ?>>
 

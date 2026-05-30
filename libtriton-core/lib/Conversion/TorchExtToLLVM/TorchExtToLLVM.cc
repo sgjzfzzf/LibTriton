@@ -1,16 +1,17 @@
 #include <cstdint>
 
-#include "dlpack/dlpack.h"
+#include "libtriton-core/Conversion/DLPackToLLVM/DLPackLLVMDescriptors.h"
 #include "libtriton-core/Conversion/TorchExtToLLVM/TorchExtToLLVM.h"
 #include "libtriton-core/Conversion/Utils/RuntimeCFunctionDeclUtils.h"
 #include "libtriton-core/Dialect/DLPack/IR/DLPackTypes.h"
-#include "libtriton-core/Dialect/TorchExt/IR/TorchExtDialect.h"
 #include "libtriton-core/Dialect/TorchExt/IR/TorchExtOps.h"
 #include "mlir/Conversion/ConvertToLLVM/ToLLVMInterface.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -41,9 +42,8 @@ rewriteKernelOperand(mlir::ConversionPatternRewriter &rewriter,
     return mlir::LLVM::ExtractValueOp::create(rewriter, loc, operand,
                                               llvm::ArrayRef<int64_t>{1})
         .getResult();
-  } else {
-    return operand;
   }
+  return operand;
 }
 
 class ConvertKernelLaunchPattern
@@ -68,8 +68,6 @@ public:
     kernelOperands.push_back(nullPtr);
     kernelOperands.push_back(nullPtr);
 
-    // Use original (unconverted) grid/block size values so that gpu.launch_func
-    // receives values of the expected type (index/i32/i64).
     mlir::gpu::KernelDim3 gridSize{launchOp.getGridSizeX(),
                                    launchOp.getGridSizeY(),
                                    launchOp.getGridSizeZ()};
@@ -87,12 +85,10 @@ public:
     if (mlir::Value asyncToken = launchOp.getAsyncToken()) {
       asyncTokenType = asyncToken.getType();
     }
-    llvm::SmallVector<mlir::Value> asyncDependencies =
-        llvm::to_vector(adaptor.getAsyncDependencies());
     rewriter.replaceOpWithNewOp<mlir::gpu::LaunchFuncOp>(
         launchOp, adaptor.getKernelAttr(), gridSize, blockSize,
         adaptor.getDynamicSharedMemorySize(), kernelOperands, asyncTokenType,
-        asyncDependencies, clusterSize);
+        adaptor.getAsyncDependencies(), clusterSize);
     return mlir::success();
   }
 };
@@ -146,7 +142,7 @@ public:
     mlir::Location loc = op.getLoc();
     mlir::Type i8Ty = mlir::IntegerType::get(rewriter.getContext(), 8);
     mlir::Value device = mlir::LLVM::ConstantOp::create(
-        rewriter, loc, i8Ty, op.getDeviceAttr().getInt());
+        rewriter, loc, i8Ty, adaptor.getDeviceAttr().getInt());
     rewriter.replaceOpWithNewOp<mlir::LLVM::CallOp>(op, *calleeOrErr,
                                                     mlir::ValueRange{device});
     return mlir::success();
@@ -159,6 +155,8 @@ public:
   void runOnOperation() final {
     mlir::MLIRContext &context = getContext();
     mlir::LLVMTypeConverter typeConverter(&context);
+    typeConverter.addConversion(
+        [](mlir::gpu::AsyncTokenType type) -> mlir::Type { return type; });
     mlir::ConversionTarget target(context);
     mlir::RewritePatternSet patterns(&context);
     populateTorchExtToLLVMConversionPatterns(target, typeConverter, patterns);
@@ -187,25 +185,25 @@ void populateTorchExtToLLVMConversionPatterns(
     mlir::ConversionTarget &target, mlir::LLVMTypeConverter &typeConverter,
     mlir::RewritePatternSet &patterns) {
   typeConverter.addConversion(
-      [](libtriton::dlpack::DLDeviceType type) -> mlir::Type {
-        return mlir::LLVM::LLVMStructType::getLiteral(
-            type.getContext(),
-            {mlir::IntegerType::get(type.getContext(), 32),
-             mlir::IntegerType::get(type.getContext(), 32)},
-            /*isPacked=*/true);
-      });
+      [](mlir::gpu::AsyncTokenType type) -> mlir::Type { return type; });
+  typeConverter.addConversion([](libtriton::dlpack::DLDeviceType type)
+                                  -> mlir::Type {
+    return libtriton::conversion::utils::DLDeviceLLVMDescriptor::getLLVMType(
+        type.getContext());
+  });
   patterns.add<ConvertGetCurrentDevicePattern, ConvertGetCurrentStreamPattern,
                ConvertKernelLaunchPattern>(typeConverter,
                                            patterns.getContext());
-  target.addIllegalOp<GetCurrentDeviceOp>();
-  target.addIllegalOp<GetCurrentStreamOp>();
-  target.addIllegalOp<TritonKernelLaunchOp>();
-  target.addLegalDialect<mlir::LLVM::LLVMDialect, mlir::gpu::GPUDialect>();
+  target.addIllegalOp<GetCurrentDeviceOp, GetCurrentStreamOp,
+                      TritonKernelLaunchOp>();
+  target.addLegalDialect<mlir::BuiltinDialect, mlir::gpu::GPUDialect,
+                         mlir::LLVM::LLVMDialect>();
   target.markUnknownOpDynamicallyLegal([](mlir::Operation *) { return true; });
 }
 
 void registerConvertTorchExtToLLVMInterface(mlir::DialectRegistry &registry) {
-  registry.addExtension(+[](mlir::MLIRContext *ctx, TorchExtDialect *dialect) {
+  registry.addExtension(+[](mlir::MLIRContext *ctx,
+                            libtriton::torch_ext::TorchExtDialect *dialect) {
     dialect->addInterfaces<TorchExtToLLVMDialectInterface>();
   });
 }
