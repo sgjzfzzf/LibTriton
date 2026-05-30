@@ -28,10 +28,3 @@ namespace libtriton::torch_ext {
 } // namespace libtriton::torch_ext
 #undef GEN_PASS_DEF_NORMALIZETORCHEXTOPERANDS
 #endif
-
-#ifdef GEN_PASS_DEF_ASYNCKERNELLAUNCH
-namespace libtriton::torch_ext {
-#include "libtriton-core/Dialect/TorchExt/Transforms/Passes.h.inc"
-} // namespace libtriton::torch_ext
-#undef GEN_PASS_DEF_ASYNCKERNELLAUNCH
-#endif

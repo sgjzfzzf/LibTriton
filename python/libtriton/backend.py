@@ -428,7 +428,6 @@ class TritonGraphModule(object):
             "finalize-memref-to-llvm{use-generic-functions}",
             f"nvvm-attach-target{{O=3 chip={chip}}}",
             "gpu.module(convert-gpu-to-nvvm{index-bitwidth=64})",
-            "torchext-async-kernel-launch",
             "gpu-module-to-binary{format=fatbin}",
             "convert-scf-to-cf",
             "convert-arith-to-llvm",

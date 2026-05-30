@@ -12,11 +12,12 @@ from libtriton._C.libtriton_core.dialects import arith, func, gpu, llvm, torch_e
 from libtriton._C.libtriton_core.extras.fx_importer import FxImporter, GraphNodeImporter
 
 
-class TritonGraphNodeImporter(GraphNodeImporter):
+class LibTritonGraphNodeImporter(GraphNodeImporter):
     """GraphNodeImporter subclass that handles triton higher-order ops natively."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        self._async_token: Optional[ir.Value] = None
 
     @staticmethod
     def _runtime_parameters(
@@ -97,6 +98,47 @@ class TritonGraphNodeImporter(GraphNodeImporter):
         else:
             assert False, f"missing runtime argument for {name} of type {triton_type}"
 
+    def _emit_async_triton_kernel_launch(
+        self,
+        loc: Any,
+        kernel_attr: ir.Attribute,
+        grid: Tuple[int, int, int],
+        block_size_x: int,
+        operands: List[ir.Value],
+        dynamic_shared_memory_size: int,
+    ) -> None:
+        index_type = ir.IndexType.get()
+        i32_type = ir.IntegerType.get_signless(32)
+        if self._async_token is None:
+            async_token_type = ir.Type.parse("!gpu.async.token")
+            stream_op = torch_ext.GetCurrentStreamOp(
+                async_token_type,
+                device=-1,
+                loc=loc,
+            )
+            async_dependencies = [stream_op.output]
+        else:
+            async_token_type = self._async_token.type
+            async_dependencies = [self._async_token]
+        grid_x, grid_y, grid_z = grid
+        launch_op = torch_ext.TritonKernelLaunchOp(
+            async_token_type,
+            async_dependencies,
+            kernel_attr,
+            arith.constant(index_type, grid_x),
+            arith.constant(index_type, grid_y),
+            arith.constant(index_type, grid_z),
+            arith.constant(index_type, block_size_x),
+            arith.constant(index_type, 1),
+            arith.constant(index_type, 1),
+            operands,
+            dynamicSharedMemorySize=arith.constant(
+                i32_type, dynamic_shared_memory_size
+            ),
+            loc=loc,
+        )
+        self._async_token = launch_op.asyncToken
+
     def _import_hop_triton_kernel_wrapper_mutation(
         self,
         loc: Any,
@@ -150,27 +192,13 @@ class TritonGraphNodeImporter(GraphNodeImporter):
         binary_name: Final[str] = f"_{node.name}_{random.randint(0, 1 << 32)}"
         self._add_gpu_binary(loc, self.fx_importer.module, binary_name, kernel)
         with loc:
-            index_type = ir.IndexType.get()
-            i32_type = ir.IntegerType.get_signless(32)
-            grid_x, grid_y, grid_z = grid
-            torch_ext.TritonKernelLaunchOp(
-                None,
-                [],
+            self._emit_async_triton_kernel_launch(
+                loc,
                 ir.Attribute.parse(f"@{binary_name}::@{kernel.metadata.name}"),
-                arith.constant(index_type, grid_x),
-                arith.constant(index_type, grid_y),
-                arith.constant(index_type, grid_z),
-                arith.constant(
-                    index_type,
-                    kernel.metadata.num_warps * kernel.metadata.warp_size,
-                ),
-                arith.constant(index_type, 1),
-                arith.constant(index_type, 1),
+                grid,
+                kernel.metadata.num_warps * kernel.metadata.warp_size,
                 operands,
-                dynamicSharedMemorySize=arith.constant(
-                    i32_type, kernel.metadata.shared
-                ),
-                loc=loc,
+                kernel.metadata.shared,
             )
 
         self._multi_result_nodes.add(node)
@@ -206,7 +234,7 @@ class TritonGraphNodeImporter(GraphNodeImporter):
 
 
 class TritonFxImporter(FxImporter):
-    """FxImporter subclass that uses TritonGraphNodeImporter for triton op support."""
+    """FxImporter subclass that uses LibTritonGraphNodeImporter for triton op support."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -219,7 +247,7 @@ class TritonFxImporter(FxImporter):
         func_visibility: Optional[str] = None,
         import_symbolic_shape_expressions: bool = False,
     ) -> Any:
-        """Override to inject TritonGraphNodeImporter."""
+        """Override to inject LibTritonGraphNodeImporter."""
         ftype, loc = self._graph_to_function_meta(g)
         with loc:
             func_op = func.FuncOp(
@@ -229,7 +257,7 @@ class TritonFxImporter(FxImporter):
                 visibility=func_visibility,
             )
             entry_block = ir.Block.create_at_start(func_op.body, ftype.inputs)
-        node_importer = TritonGraphNodeImporter(
+        node_importer = LibTritonGraphNodeImporter(
             self,
             self._c,
             self._cc,

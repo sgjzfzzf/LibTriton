@@ -17,7 +17,6 @@ add_mlir_library(
   MLIRSCFDialect
   TorchMLIRCAPI
   TorchMLIRTorchConversionDialect
-  TorchExtAsyncKernelLaunch
   TorchExtBufferize
   TorchExtDialect
   TorchExtNormalizeOperands
