@@ -107,8 +107,7 @@ public:
     }
 
     mlir::FailureOr<mlir::LLVM::LLVMFuncOp> calleeOrErr =
-        libtriton::conversion::utils::runtime::getOrCreateGetCurrentDevice(
-            moduleOp);
+        conversion::utils::runtime::getOrCreateGetCurrentDevice(moduleOp);
     if (mlir::failed(calleeOrErr)) {
       return mlir::failure();
     }
@@ -133,8 +132,7 @@ public:
     }
 
     mlir::FailureOr<mlir::LLVM::LLVMFuncOp> calleeOrErr =
-        libtriton::conversion::utils::runtime::getOrCreateGetCurrentStream(
-            moduleOp);
+        conversion::utils::runtime::getOrCreateGetCurrentStream(moduleOp);
     if (mlir::failed(calleeOrErr)) {
       return mlir::failure();
     }
@@ -186,9 +184,8 @@ void populateTorchExtToLLVMConversionPatterns(
     mlir::RewritePatternSet &patterns) {
   typeConverter.addConversion(
       [](mlir::gpu::AsyncTokenType type) -> mlir::Type { return type; });
-  typeConverter.addConversion([](libtriton::dlpack::DLDeviceType type)
-                                  -> mlir::Type {
-    return libtriton::conversion::utils::DLDeviceLLVMDescriptor::getLLVMType(
+  typeConverter.addConversion([](dlpack::DLDeviceType type) -> mlir::Type {
+    return conversion::utils::DLDeviceLLVMDescriptor::getLLVMType(
         type.getContext());
   });
   patterns.add<ConvertGetCurrentDevicePattern, ConvertGetCurrentStreamPattern,
@@ -202,8 +199,7 @@ void populateTorchExtToLLVMConversionPatterns(
 }
 
 void registerConvertTorchExtToLLVMInterface(mlir::DialectRegistry &registry) {
-  registry.addExtension(+[](mlir::MLIRContext *ctx,
-                            libtriton::torch_ext::TorchExtDialect *dialect) {
+  registry.addExtension(+[](mlir::MLIRContext *ctx, TorchExtDialect *dialect) {
     dialect->addInterfaces<TorchExtToLLVMDialectInterface>();
   });
 }

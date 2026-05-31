@@ -5,7 +5,6 @@ add_mlir_library(
   PUBLIC
   DLPackDialect
   DLPackToLLVM
-  LibTritonOneShotBufferize
   MLIRArithDialect
   MLIRControlFlowDialect
   MLIRConvertToLLVMPass

@@ -9,18 +9,16 @@ namespace libtriton::conversion::utils {
 
 std::optional<DLDataType> getDLPackDTypeFromMLIRType(mlir::Type type) {
   if (type.isF16()) {
-    return DLDataType{static_cast<std::uint8_t>(kDLFloat), 16, 1};
+    return DLDataType{kDLFloat, 16, 1};
   } else if (type.isF32()) {
-    return DLDataType{static_cast<std::uint8_t>(kDLFloat), 32, 1};
+    return DLDataType{kDLFloat, 32, 1};
   } else if (type.isF64()) {
-    return DLDataType{static_cast<std::uint8_t>(kDLFloat), 64, 1};
+    return DLDataType{kDLFloat, 64, 1};
   } else if (type.isBF16()) {
-    return DLDataType{static_cast<std::uint8_t>(kDLBfloat), 16, 1};
+    return DLDataType{kDLBfloat, 16, 1};
   } else if (mlir::IntegerType integerType =
                  mlir::dyn_cast<mlir::IntegerType>(type)) {
-    const std::uint8_t code = integerType.isUnsigned()
-                                  ? static_cast<std::uint8_t>(kDLUInt)
-                                  : static_cast<std::uint8_t>(kDLInt);
+    const std::uint8_t code = integerType.isUnsigned() ? kDLUInt : kDLInt;
     return DLDataType{code, static_cast<std::uint8_t>(integerType.getWidth()),
                       1};
   } else {

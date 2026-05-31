@@ -73,9 +73,8 @@ bool isMemRefType(mlir::Type type) {
 }
 
 bool isOriginCarrierType(mlir::Type type) {
-  return isMemRefType(type) ||
-         mlir::isa<libtriton::dlpack::DLTensorType>(type) ||
-         mlir::isa<libtriton::dlpack::DLManagedTensorType>(type);
+  return isMemRefType(type) || mlir::isa<dlpack::DLTensorType>(type) ||
+         mlir::isa<dlpack::DLManagedTensorType>(type);
 }
 
 MemRefOrigin
@@ -145,7 +144,7 @@ readPassthroughOrigin(mlir::DataFlowSolver &solver, mlir::Value value) {
   }
 
   if (definingOp->getName().getDialectNamespace() ==
-          libtriton::dlpack::DLPackDialect::getDialectNamespace() &&
+          dlpack::DLPackDialect::getDialectNamespace() &&
       definingOp->getNumResults() == 1 && definingOp->getResult(0) == value) {
     MemRefOrigin joined;
     for (mlir::Value operand : definingOp->getOperands()) {

@@ -94,8 +94,7 @@ struct TritonKernelLaunchOpInterface
 
 void registerBufferizableOpInterfaceExternalModels(
     mlir::DialectRegistry &registry) {
-  registry.addExtension(+[](MLIRContext *ctx,
-                            libtriton::torch_ext::TorchExtDialect *) {
+  registry.addExtension(+[](MLIRContext *ctx, TorchExtDialect *) {
     TritonKernelLaunchOp::attachInterface<TritonKernelLaunchOpInterface>(*ctx);
   });
 }

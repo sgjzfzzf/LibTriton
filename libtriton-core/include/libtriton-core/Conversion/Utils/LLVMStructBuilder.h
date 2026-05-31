@@ -89,9 +89,8 @@ LLVMStructBuilder<LLVMStructFieldList<FieldTypes...>>::extract(
     StructValue structValue) {
   using ResultType = typename Fields::template FieldType<Index>;
   mlir::Value extracted =
-      mlir::LLVM::ExtractValueOp::create(
-          rewriter, loc, structValue,
-          llvm::ArrayRef<int64_t>{static_cast<int64_t>(Index)})
+      mlir::LLVM::ExtractValueOp::create(rewriter, loc, structValue,
+                                         llvm::ArrayRef<int64_t>{Index})
           .getResult();
   return convertExtracted<ResultType>(extracted);
 }

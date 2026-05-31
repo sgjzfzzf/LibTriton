@@ -29,36 +29,31 @@ namespace libtriton::tvm_ffi {
 namespace {
 
 bool isSupportedToType(mlir::Type type) {
-  return mlir::isa<libtriton::tvm_ffi::AnyType,
-                   libtriton::tvm_ffi::ObjectHandleType,
-                   libtriton::dlpack::DLTensorType, mlir::LLVM::LLVMPointerType,
-                   mlir::Float64Type, mlir::IntegerType>(type);
+  return mlir::isa<AnyType, ObjectHandleType, dlpack::DLTensorType,
+                   mlir::LLVM::LLVMPointerType, mlir::Float64Type,
+                   mlir::IntegerType>(type);
 }
 
 bool isSupportedToConversionPair(mlir::Type inputType, mlir::Type outputType) {
-  const bool inputIsAny = mlir::isa<libtriton::tvm_ffi::AnyType>(inputType);
-  const bool outputIsAny = mlir::isa<libtriton::tvm_ffi::AnyType>(outputType);
+  const bool inputIsAny = mlir::isa<AnyType>(inputType);
+  const bool outputIsAny = mlir::isa<AnyType>(outputType);
   return (inputIsAny && outputIsAny) ||
-         (inputIsAny &&
-          mlir::isa<mlir::IntegerType, mlir::Float64Type,
-                    mlir::LLVM::LLVMPointerType,
-                    libtriton::tvm_ffi::ObjectHandleType,
-                    libtriton::dlpack::DLTensorType>(outputType)) ||
+         (inputIsAny && mlir::isa<mlir::IntegerType, mlir::Float64Type,
+                                  mlir::LLVM::LLVMPointerType, ObjectHandleType,
+                                  dlpack::DLTensorType>(outputType)) ||
          (outputIsAny &&
           mlir::isa<mlir::IntegerType, mlir::Float64Type,
-                    mlir::LLVM::LLVMPointerType,
-                    libtriton::tvm_ffi::ObjectHandleType>(inputType));
+                    mlir::LLVM::LLVMPointerType, ObjectHandleType>(inputType));
 }
 
 bool isSupportedAsType(mlir::Type type) {
-  return mlir::isa<libtriton::tvm_ffi::AnyType, mlir::LLVM::LLVMStructType>(
-      type);
+  return mlir::isa<AnyType, mlir::LLVM::LLVMStructType>(type);
 }
 
 bool isSupportedAsConversionPair(mlir::Type inputType, mlir::Type outputType) {
-  return (mlir::isa<libtriton::tvm_ffi::AnyType>(inputType) &&
+  return (mlir::isa<AnyType>(inputType) &&
           mlir::isa<mlir::LLVM::LLVMStructType>(outputType)) ||
-         (mlir::isa<libtriton::tvm_ffi::AnyType>(outputType) &&
+         (mlir::isa<AnyType>(outputType) &&
           mlir::isa<mlir::LLVM::LLVMStructType>(inputType));
 }
 

@@ -420,7 +420,7 @@ class TritonGraphModule(object):
     def _build_builtin_pipeline(chip: str) -> str:
         passes: List[str] = [
             "func.func(canonicalize,sccp,canonicalize,cse)",
-            "libtriton-one-shot-bufferize{bufferize-function-boundaries=1 function-boundary-type-conversion=identity-layout-map}",
+            "one-shot-bufferize{bufferize-function-boundaries=1 function-boundary-type-conversion=identity-layout-map}",
             "convert-linalg-to-parallel-loops",
             "func.func(gpu-map-parallel-loops)",
             "convert-parallel-loops-to-gpu",

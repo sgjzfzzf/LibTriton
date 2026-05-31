@@ -1,6 +1,5 @@
 #include "libtriton-core/Utils/Registration.h"
 
-#include "libtriton-core/Conversion/Bufferization/Bufferization.h"
 #include "libtriton-core/Conversion/DLPackToLLVM/DLPackToLLVM.h"
 #include "libtriton-core/Conversion/TVMFFIToLLVM/TVMFFIToLLVM.h"
 #include "libtriton-core/Conversion/TorchExtToLLVM/TorchExtToLLVM.h"
@@ -30,7 +29,6 @@ void libtriton::conversion::registerAllPasses() {
   mlir::registerAllPasses();
   mlir::registerConvertToLLVMPass();
   mlir::registerReconcileUnrealizedCastsPass();
-  libtriton::conversion::registerLibTritonOneShotBufferizePass();
   libtriton::dlpack::registerConvertDLPackToLLVMPass();
   libtriton::torch_ext::registerConvertTorchExtToLLVMPass();
   libtriton::tvm_ffi::registerConvertTVMFFIToLLVMPass();

@@ -1,4 +1,3 @@
-add_subdirectory(Bufferization)
 add_subdirectory(DLPackToLLVM)
 add_subdirectory(TorchExtToLLVM)
 add_subdirectory(TVMFFIToLLVM)
