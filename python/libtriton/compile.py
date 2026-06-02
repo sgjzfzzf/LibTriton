@@ -1,12 +1,12 @@
 from typing import Any, Callable
 
-from .backend import TritonGraphModule
+from .backend import LibTritonGraphModule
 
 
 def compile(fn: Callable[..., Any]) -> Callable[..., Callable[..., Any]]:
 
     def f(*args: Any, **kwargs: Any) -> Any:
-        gm: TritonGraphModule = TritonGraphModule(fn)
+        gm: LibTritonGraphModule = LibTritonGraphModule(fn)
         gm.compile(*args, **kwargs)
         return gm.executor
 
@@ -14,4 +14,4 @@ def compile(fn: Callable[..., Any]) -> Callable[..., Callable[..., Any]]:
 
 
 def jit(fn: Callable[..., Any]) -> Callable[..., Callable[..., Any]]:
-    return TritonGraphModule(fn)
+    return LibTritonGraphModule(fn)

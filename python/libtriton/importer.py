@@ -143,12 +143,12 @@ class LibTritonGraphNodeImporter(GraphNodeImporter):
         i32_type = ir.IntegerType.get_signless(32)
         if self._async_token is None:
             async_token_type = ir.Type.parse("!gpu.async.token")
-            stream_op = torch_ext.GetCurrentStreamOp(
+            stream: ir.Value = torch_ext.get_current_stream(
                 async_token_type,
                 device=-1,
                 loc=loc,
             )
-            async_dependencies = [stream_op.output]
+            async_dependencies = [stream]
         else:
             async_token_type = self._async_token.type
             async_dependencies = [self._async_token]

@@ -50,7 +50,7 @@ class GuardVariant(object):
     wrapper_type: ir.FunctionType
 
 
-class TritonGraphModule(object):
+class LibTritonGraphModule(object):
     """Compiles a torch.fx.GraphModule containing triton ops via LibTritonFxImporter."""
 
     def __init__(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
@@ -161,7 +161,7 @@ class TritonGraphModule(object):
         )
         with self.ctx:
             passmanager.PassManager.parse(
-                TritonGraphModule._build_torch_pipeline()
+                LibTritonGraphModule._build_torch_pipeline()
             ).run(module.operation)
             wrapper_name, wrapper_type = self._emit_submodule_wrapper(
                 module,
@@ -202,7 +202,7 @@ class TritonGraphModule(object):
             self._any_llvm_type,
             None,
         ).result
-        any_value_llvm: ir.Value = llvm.LoadOp(self._any_llvm_type, arg_slot_ptr).result
+        any_value_llvm: ir.Value = llvm.load(self._any_llvm_type, arg_slot_ptr)
         return tvm_ffi_d.as_(self._any_type, any_value_llvm)
 
     def _emit_unbox_any_arg(
@@ -216,23 +216,23 @@ class TritonGraphModule(object):
             index,
         )
         if isinstance(target_ty, ir.RankedTensorType):
-            dl_tensor: ir.Value = tvm_ffi_d.ToOp(self._dl_tensor_type, any_value).output
+            dl_tensor: ir.Value = tvm_ffi_d.to(self._dl_tensor_type, any_value)
             memref_ty: ir.Type = ir.MemRefType.get(
                 target_ty.shape,
                 target_ty.element_type,
             )
-            memref: ir.Value = dlpack.ToMemRefOp(memref_ty, dl_tensor).output
-            return bufferization.ToTensorOp(
+            memref: ir.Value = dlpack.to_memref(memref_ty, dl_tensor)
+            return bufferization.to_tensor(
                 target_ty,
                 memref,
                 restrict=True,
                 writable=True,
-            ).result
+            )
         elif isinstance(target_ty, ir.MemRefType):
-            dl_tensor = tvm_ffi_d.ToOp(self._dl_tensor_type, any_value).output
-            return dlpack.ToMemRefOp(target_ty, dl_tensor).output
+            dl_tensor = tvm_ffi_d.to(self._dl_tensor_type, any_value)
+            return dlpack.to_memref(target_ty, dl_tensor)
         else:
-            return tvm_ffi_d.ToOp(target_ty, any_value).output
+            return tvm_ffi_d.to(target_ty, any_value)
 
     def _emit_box_return(self, packed_result_ptr: ir.Value, value: ir.Value) -> None:
         value_type: ir.Type = value.type
@@ -243,31 +243,31 @@ class TritonGraphModule(object):
                 value_type.element_type,
             )
             memref: ir.Value = bufferization.ToBufferOp(memref_ty, value).buffer
-            managed: ir.Value = dlpack.FromMemRefOwnedOp(
+            managed: ir.Value = dlpack.from_memref_owned(
                 self._managed_tensor_type,
                 memref,
-            ).output
-            handle: ir.Value = tvm_ffi_d.TensorFromDLPackOp(
+            )
+            handle: ir.Value = tvm_ffi_d.tensor_from_dlpack(
                 self._object_handle_type,
                 managed,
                 zero,
                 zero,
-            ).output
-            boxed: ir.Value = tvm_ffi_d.ToOp(self._any_type, handle).output
+            )
+            boxed: ir.Value = tvm_ffi_d.to(self._any_type, handle)
         elif isinstance(value_type, ir.MemRefType):
-            managed: ir.Value = dlpack.FromMemRefOwnedOp(
+            managed: ir.Value = dlpack.from_memref_owned(
                 self._managed_tensor_type,
                 value,
-            ).output
-            handle: ir.Value = tvm_ffi_d.TensorFromDLPackOp(
+            )
+            handle: ir.Value = tvm_ffi_d.tensor_from_dlpack(
                 self._object_handle_type,
                 managed,
                 zero,
                 zero,
-            ).output
-            boxed = tvm_ffi_d.ToOp(self._any_type, handle).output
+            )
+            boxed = tvm_ffi_d.to(self._any_type, handle)
         else:
-            boxed = tvm_ffi_d.ToOp(self._any_type, value).output
+            boxed = tvm_ffi_d.to(self._any_type, value)
         boxed_llvm: ir.Value = tvm_ffi_d.as_(self._any_llvm_type, boxed)
         llvm.StoreOp(boxed_llvm, packed_result_ptr)
 
@@ -351,7 +351,7 @@ class TritonGraphModule(object):
     ) -> Tuple[str, ir.FunctionType]:
         callee_name: str
         callee_ty: ir.FunctionType
-        callee_name, callee_ty = TritonGraphModule._lookup_func_type(
+        callee_name, callee_ty = LibTritonGraphModule._lookup_func_type(
             module,
             self.fn.__name__,
         )
@@ -404,17 +404,15 @@ class TritonGraphModule(object):
                         out_param_ty.element_type,
                         out_param_ty.shape,
                     )
-                    out_any: ir.Value = tvm_ffi_d.ToOp(
-                        self._any_type, out_handle
-                    ).output
-                    dl_tensor: ir.Value = tvm_ffi_d.ToOp(
+                    out_any: ir.Value = tvm_ffi_d.to(self._any_type, out_handle)
+                    dl_tensor: ir.Value = tvm_ffi_d.to(
                         self._dl_tensor_type,
                         out_any,
-                    ).output
-                    out_memref: ir.Value = dlpack.ToMemRefOp(
+                    )
+                    out_memref: ir.Value = dlpack.to_memref(
                         out_param_ty,
                         dl_tensor,
-                    ).output
+                    )
                     call_op: func.CallOp = func.CallOp(
                         callee_ty.results,
                         callee_name,
@@ -487,7 +485,7 @@ class TritonGraphModule(object):
                     )
                     func.return_([status])
             major, minor = torch.cuda.get_device_capability()
-            pipeline: str = TritonGraphModule._build_builtin_pipeline(
+            pipeline: str = LibTritonGraphModule._build_builtin_pipeline(
                 chip=f"sm_{major}{minor}"
             )
             passmanager.PassManager.parse(pipeline).run(module.operation)
@@ -519,10 +517,10 @@ class TritonGraphModule(object):
             result = fn(*args)
             if isinstance(result, (list, tuple)):
                 return tuple(
-                    TritonGraphModule._canonicalize_ret(value) for value in result
+                    LibTritonGraphModule._canonicalize_ret(value) for value in result
                 )
             else:
-                return TritonGraphModule._canonicalize_ret(result)
+                return LibTritonGraphModule._canonicalize_ret(result)
 
         return f
 
