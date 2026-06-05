@@ -1,5 +1,7 @@
 #include "libtriton-core/Conversion/TorchToCf/TorchToCf.h"
+#include "libtriton-core/Dialect/TorchExt/Transforms/BackendTypeConversion.h"
 
+#include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -34,28 +36,10 @@ class ConvertTorchToCfPass
 public:
   void runOnOperation() final {
     mlir::MLIRContext &context = getContext();
-    mlir::TypeConverter typeConverter;
-    typeConverter.addConversion(
-        [](mlir::torch::Torch::BoolType type) -> std::optional<mlir::Type> {
-          return mlir::IntegerType::get(type.getContext(), 1);
-        });
-    typeConverter.addTargetMaterialization(
-        [](mlir::OpBuilder &builder, mlir::IntegerType type,
-           mlir::ValueRange inputs, mlir::Location loc) -> mlir::Value {
-          return mlir::UnrealizedConversionCastOp::create(
-                     builder, loc, mlir::TypeRange(type), inputs)
-              .getResult(0);
-        });
-    typeConverter.addSourceMaterialization(
-        [](mlir::OpBuilder &builder, mlir::torch::Torch::BoolType type,
-           mlir::ValueRange inputs, mlir::Location loc) -> mlir::Value {
-          return mlir::UnrealizedConversionCastOp::create(
-                     builder, loc, mlir::TypeRange(type), inputs)
-              .getResult(0);
-        });
-
+    mlir::LLVMTypeConverter typeConverter(&context);
     mlir::ConversionTarget target(context);
     mlir::RewritePatternSet patterns(&context);
+    setupBackendTypeConversion(target, typeConverter);
     populateTorchToCfConversionPatterns(target, typeConverter, patterns);
 
     if (mlir::failed(mlir::applyPartialConversion(getOperation(), target,

@@ -1,5 +1,5 @@
 #include "libtriton-core/Conversion/TorchToLLVM/TorchToLLVM.h"
-#include "libtriton-core/Conversion/TorchToLLVM/BackendTypeConversion.h"
+#include "libtriton-core/Dialect/TorchExt/Transforms/BackendTypeConversion.h"
 
 #include "mlir/Conversion/ConvertToLLVM/ToLLVMInterface.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
