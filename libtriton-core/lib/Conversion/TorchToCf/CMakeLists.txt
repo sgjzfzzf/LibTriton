@@ -1,0 +1,10 @@
+add_mlir_conversion_library(
+  TorchToCf
+  TorchToCf.cc
+  DEPENDS
+  MLIRConversionPassIncGen
+  LINK_LIBS
+  PUBLIC
+  MLIRControlFlowDialect
+  MLIRPass
+  TorchMLIRTorchDialect)

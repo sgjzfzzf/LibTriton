@@ -3,6 +3,8 @@
 #include "libtriton-core/Conversion/DLPackToLLVM/DLPackToLLVM.h"
 #include "libtriton-core/Conversion/TVMFFIToLLVM/TVMFFIToLLVM.h"
 #include "libtriton-core/Conversion/TorchExtToLLVM/TorchExtToLLVM.h"
+#include "libtriton-core/Conversion/TorchToCf/TorchToCf.h"
+#include "libtriton-core/Conversion/TorchToLLVM/TorchToLLVM.h"
 #include "libtriton-core/Dialect/DLPack/IR/DLPackDialect.h"
 #include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIDialect.h"
 #include "libtriton-core/Dialect/TVMFFI/Transforms/Passes.h"
@@ -24,6 +26,8 @@ void libtriton::conversion::registerAllPasses() {
   mlir::registerReconcileUnrealizedCastsPass();
   libtriton::dlpack::registerConvertDLPackToLLVMPass();
   libtriton::torch_ext::registerConvertTorchExtToLLVMPass();
+  libtriton::torch::registerConvertTorchToCfPass();
+  libtriton::torch::registerConvertTorchToLLVMPass();
   libtriton::tvm_ffi::registerConvertTVMFFIToLLVMPass();
   libtriton::tvm_ffi::registerFinalizeTVMFFICallPass();
   torchMlirRegisterAllPasses();
@@ -34,6 +38,7 @@ void libtriton::conversion::registerAllDialects(
   mlir::registerAllExtensions(registry);
   libtriton::dlpack::registerConvertDLPackToLLVMInterface(registry);
   libtriton::torch_ext::registerConvertTorchExtToLLVMInterface(registry);
+  libtriton::torch::registerConvertTorchToLLVMInterface(registry);
   libtriton::tvm_ffi::registerConvertTVMFFIToLLVMInterface(registry);
   libtriton::torch_ext::registerBufferizableOpInterfaceExternalModels(registry);
 
