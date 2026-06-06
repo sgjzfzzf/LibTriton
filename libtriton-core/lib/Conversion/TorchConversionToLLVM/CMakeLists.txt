@@ -1,12 +1,12 @@
 add_mlir_conversion_library(
-  TorchToLLVM
-  TorchToLLVM.cc
-  FuncBackendTypeConversion.cc
+  TorchConversionToLLVM
+  TorchConversionToLLVM.cc
   DEPENDS
   MLIRConversionPassIncGen
   LINK_LIBS
   PUBLIC
   BackendTypeConversion
+  MLIRLLVMCommonConversion
   MLIRLLVMDialect
   MLIRPass
-  TorchMLIRTorchDialect)
+  TorchMLIRTorchConversionDialect)

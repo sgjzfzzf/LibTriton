@@ -222,6 +222,27 @@ setupTorchDeviceToLLVMStructConversion(LLVMTypeConverter &typeConverter) {
       });
 }
 
+/// Convert Torch NoneType to i64 (zero-initialized placeholder).
+static void setupTorchNoneToI64Conversion(LLVMTypeConverter &typeConverter) {
+  typeConverter.addConversion([](Torch::NoneType type) -> std::optional<Type> {
+    return IntegerType::get(type.getContext(), 64);
+  });
+  typeConverter.addTargetMaterialization([](OpBuilder &builder,
+                                            IntegerType type, ValueRange inputs,
+                                            Location loc) -> Value {
+    return UnrealizedConversionCastOp::create(builder, loc, TypeRange(type),
+                                              inputs)
+        .getResult(0);
+  });
+  typeConverter.addSourceMaterialization(
+      [](OpBuilder &builder, Torch::NoneType type, ValueRange inputs,
+         Location loc) -> Value {
+        return UnrealizedConversionCastOp::create(builder, loc, TypeRange(type),
+                                                  inputs)
+            .getResult(0);
+      });
+}
+
 /// Convert Torch StringType to LLVM pointer type.
 static void
 setupTorchStringToLLVMPtrConversion(LLVMTypeConverter &typeConverter) {
@@ -280,5 +301,6 @@ void libtriton::torch::setupBackendTypeConversion(
   setupTorchDeviceToLLVMStructConversion(typeConverter);
   setupTorchIntToI64Conversion(typeConverter);
   setupTorchFloatToF64Conversion(typeConverter);
+  setupTorchNoneToI64Conversion(typeConverter);
   setupTorchStringToLLVMPtrConversion(typeConverter);
 }

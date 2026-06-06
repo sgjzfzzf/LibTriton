@@ -198,8 +198,9 @@ public:
     mlir::RewritePatternSet patterns(ctx);
     patterns.add<CallOpPattern>(ctx);
     if (mlir::failed(
-            mlir::applyPatternsGreedily(moduleOp, std::move(patterns))))
-      return signalPassFailure();
+            mlir::applyPatternsGreedily(moduleOp, std::move(patterns)))) {
+      signalPassFailure();
+    }
   }
 };
 

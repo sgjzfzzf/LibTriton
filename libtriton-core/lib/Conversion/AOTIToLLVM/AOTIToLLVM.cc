@@ -278,16 +278,6 @@ public:
     mlir::RewritePatternSet patterns(&context);
     libtriton::torch::setupBackendTypeConversion(target, typeConverter);
 
-    // NoneType → i64 so the framework can build adaptors for None inputs.
-    typeConverter.addConversion(
-        [](mlir::torch::Torch::NoneType type) -> std::optional<mlir::Type> {
-          return mlir::IntegerType::get(type.getContext(), 64);
-        });
-
-    libtriton::torch::populateFuncBackendTypeConversionPatterns(
-        typeConverter, patterns, target);
-    populateAOTIToLLVMConversionPatterns(target, typeConverter, patterns);
-
     if (mlir::failed(mlir::applyPartialConversion(getOperation(), target,
                                                   std::move(patterns)))) {
       signalPassFailure();
@@ -301,6 +291,10 @@ struct AOTIToLLVMDialectInterface : public mlir::ConvertToLLVMPatternInterface {
   void populateConvertToLLVMConversionPatterns(
       mlir::ConversionTarget &target, mlir::LLVMTypeConverter &typeConverter,
       mlir::RewritePatternSet &patterns) const final {
+    // Setup type conversion for torch types before adding patterns, so that
+    // the type converter can handle Torch tensor/bool/int/float/optional etc.
+    // types when patterns query adaptor types.
+    libtriton::torch::setupBackendTypeConversion(target, typeConverter);
     populateAOTIToLLVMConversionPatterns(target, typeConverter, patterns);
   }
 };

@@ -1,10 +1,12 @@
 add_mlir_conversion_library(
-  TorchToArith
-  TorchToArith.cc
+  TorchPipeline
+  Pipeline.cc
   DEPENDS
   MLIRConversionPassIncGen
   LINK_LIBS
   PUBLIC
-  MLIRArithDialect
+  AOTInductorTransforms
+  AOTIToLLVM
   MLIRPass
-  TorchMLIRTorchDialect)
+  TorchToCf
+  TorchToLLVM)
