@@ -3,6 +3,8 @@ add_mlir_library(
   Registration.cc
   LINK_LIBS
   PUBLIC
+  AOTInductorTransforms
+  AOTIToLLVM
   DLPackDialect
   DLPackToLLVM
   MLIRRegisterAllDialects
@@ -15,7 +17,6 @@ add_mlir_library(
   TorchExtDialect
   TorchExtToLLVM
   TorchToArith
-  TorchToAOTInductor
   TorchToCf
   TorchToLLVM
   TVMFFIDialect

@@ -1,5 +1,10 @@
 include "mlir/Pass/PassBase.td"
 
+def ConvertAOTIToLLVM : Pass<"convert-aoti-to-llvm", "mlir::ModuleOp"> {
+  let summary = "Lower AOTInductor dialect operations to LLVM dialect";
+  let description = [{Lower AOTInductor dialect operations to LLVM dialect.}];
+}
+
 def ConvertDLPackToLLVM : Pass<"convert-dlpack-to-llvm", "mlir::ModuleOp"> {
   let summary = "Lower DLPack dialect operations to LLVM dialect";
   let description = [{Lower DLPack dialect operations to LLVM dialect.}];
@@ -39,27 +44,13 @@ def ConvertTorchToArith
   let dependentDialects = ["mlir::arith::ArithDialect"];
 }
 
-def ConvertTorchToAOTInductor
-    : Pass<"convert-torch-to-aoti", "mlir::ModuleOp"> {
-  let summary = "Lower Torch dialect operations to AOTInductor dialect";
-  // clang-format off
-  let description = [{
-    Converts Torch dialect ops (e.g. torch.aten ops) into the AOTInductor
-    dialect (aoti.torch_call_dispatcher etc.) for AOT-compiled model
-    execution via the AOTInductor C shim interface.
-  }];
-  // clang-format on
-  let dependentDialects = ["libtriton::aoti::AOTInductorDialect"];
-}
-
 def ConvertTorchToCf : Pass<"convert-torch-to-cf", "mlir::ModuleOp"> {
   let summary = "Lower Torch dialect runtime ops to ControlFlow dialect";
   let description = [{Lower Torch dialect runtime ops to ControlFlow dialect.}];
   let dependentDialects = ["mlir::cf::ControlFlowDialect"];
 }
 
-def ConvertTorchToLLVM : Pass<"convert-torch-to-llvm", "mlir::ModuleOp"> {
+def TorchToLLVMPipeline : Pass<"torch-to-llvm-pipeline", "mlir::ModuleOp"> {
   let summary = "Lower Torch dialect operations to LLVM dialect";
   let description = [{Lower Torch dialect operations to LLVM dialect.}];
-  let dependentDialects = ["mlir::LLVM::LLVMDialect"];
 }

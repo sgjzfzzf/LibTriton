@@ -1,0 +1,11 @@
+add_mlir_library(
+  AOTInductorTransforms
+  RewriteTorchAsAOTI.cc
+  DEPENDS
+  MLIRAOTInductorTransformsPassIncGen
+  LINK_LIBS
+  PUBLIC
+  AOTInductorDialect
+  MLIRIR
+  MLIRPass
+  TorchMLIRTorchDialect)

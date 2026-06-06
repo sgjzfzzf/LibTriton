@@ -1,6 +1,7 @@
 #include "libtriton-core/Conversion/TorchToArith/TorchToArith.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
@@ -87,8 +88,9 @@ void populateTorchToArithConversionPatterns(mlir::ConversionTarget &target,
   target.addIllegalOp<mlir::torch::Torch::ConstantBoolOp,
                       mlir::torch::Torch::ConstantIntOp,
                       mlir::torch::Torch::ConstantFloatOp>();
-  target.addLegalDialect<mlir::arith::ArithDialect, mlir::BuiltinDialect>();
-  target.markUnknownOpDynamicallyLegal([](mlir::Operation *) { return true; });
+  target.addLegalDialect<mlir::arith::ArithDialect, mlir::BuiltinDialect,
+                         mlir::func::FuncDialect,
+                         mlir::torch::Torch::TorchDialect>();
 }
 
 } // namespace libtriton::torch

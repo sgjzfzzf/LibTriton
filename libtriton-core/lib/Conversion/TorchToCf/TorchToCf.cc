@@ -3,6 +3,7 @@
 
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
@@ -56,8 +57,8 @@ void populateTorchToCfConversionPatterns(mlir::ConversionTarget &target,
                                          mlir::RewritePatternSet &patterns) {
   patterns.add<ConvertRuntimeAssertOp>(typeConverter, patterns.getContext());
   target.addIllegalOp<mlir::torch::Torch::RuntimeAssertOp>();
-  target.addLegalDialect<mlir::cf::ControlFlowDialect>();
-  target.markUnknownOpDynamicallyLegal([](mlir::Operation *) { return true; });
+  target
+      .addLegalDialect<mlir::cf::ControlFlowDialect, mlir::func::FuncDialect>();
 }
 
 } // namespace libtriton::torch

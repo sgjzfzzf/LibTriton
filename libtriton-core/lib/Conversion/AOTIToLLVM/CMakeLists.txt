@@ -1,0 +1,13 @@
+add_mlir_conversion_library(
+  AOTIToLLVM
+  AOTIToLLVM.cc
+  DEPENDS
+  MLIRConversionPassIncGen
+  LINK_LIBS
+  PUBLIC
+  AOTInductorDialect
+  BackendTypeConversion
+  ConversionUtils
+  MLIRLLVMCommonConversion
+  MLIRLLVMDialect
+  MLIRPass)
