@@ -1,0 +1,9 @@
+add_mlir_dialect_library(
+  AOTInductorDialect
+  AOTInductorDialect.cc
+  DEPENDS
+  MLIRAOTInductorIncGen
+  LINK_LIBS
+  PUBLIC
+  MLIRIR
+  MLIRSideEffectInterfaces)

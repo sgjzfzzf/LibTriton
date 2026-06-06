@@ -4,6 +4,7 @@ set_target_properties(libtriton-core-opt PROPERTIES RUNTIME_OUTPUT_DIRECTORY
                                                     "${PROJECT_BINARY_DIR}/bin")
 
 target_link_libraries(libtriton-core-opt PRIVATE LibTritonUtilsRegistration
+                                                 AOTInductorDialect
                                                  MLIRMlirOptMain)
 
 mlir_check_all_link_libraries(libtriton-core-opt)

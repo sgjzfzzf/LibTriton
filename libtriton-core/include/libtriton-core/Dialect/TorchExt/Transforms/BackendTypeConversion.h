@@ -31,6 +31,7 @@ void populateFuncBackendTypeConversionPatterns(
 /// Currently handles:
 ///   - Torch tensor types (ValueTensorType, NonValueTensorType) -> llvm.ptr
 ///   - Torch BoolType -> i1
+///   - Torch DeviceType -> struct<i32, i32>
 ///   - Torch IntType -> i64
 ///   - Torch FloatType -> f64
 ///   - Torch StringType -> llvm.ptr

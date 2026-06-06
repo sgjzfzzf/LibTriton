@@ -89,6 +89,7 @@ declare_mlir_python_sources(
   SOURCES
   __init__.py
   capi_utils.py
+  dialects/aoti.py
   dialects/dlpack.py
   dialects/torch_ext.py
   dialects/tvm_ffi.py)
@@ -103,6 +104,16 @@ declare_mlir_python_sources(
   compiler_utils.py
   dialects/torch/__init__.py
   fx.py)
+
+declare_mlir_dialect_python_bindings(
+  ADD_TO_PARENT
+  LibTritonCorePythonSources.Core
+  ROOT_DIR
+  "${CMAKE_CURRENT_SOURCE_DIR}"
+  TD_FILE
+  dialects/AOTInductorOpsPyBind.td
+  DIALECT_NAME
+  aoti)
 
 declare_mlir_dialect_python_bindings(
   ADD_TO_PARENT
@@ -154,6 +165,7 @@ add_mlir_python_sources_target(
   ${LIBTRITON_CORE_PYTHON_OUTPUT_ROOT}
   SOURCES_TARGETS
   LibTritonCorePythonSources.Core
+  LibTritonCorePythonSources.Core.aoti.ops_gen
   LibTritonCorePythonSources.Core.dlpack.ops_gen
   LibTritonCorePythonSources.Core.torch_ext.ops_gen
   LibTritonCorePythonSources.Core.torch.ops_gen

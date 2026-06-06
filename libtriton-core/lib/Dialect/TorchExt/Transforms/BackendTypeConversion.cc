@@ -195,6 +195,33 @@ static void setupTorchFloatToF64Conversion(LLVMTypeConverter &typeConverter) {
       });
 }
 
+/// Convert Torch DeviceType to an LLVM struct<i32, i32>.
+/// The first i32 represents the device type (e.g., CPU=0, CUDA=1),
+/// and the second i32 represents the device index.
+static void
+setupTorchDeviceToLLVMStructConversion(LLVMTypeConverter &typeConverter) {
+  typeConverter.addConversion(
+      [](Torch::DeviceType type) -> std::optional<Type> {
+        MLIRContext *ctx = type.getContext();
+        return LLVM::LLVMStructType::getLiteral(
+            ctx, {IntegerType::get(ctx, 32), IntegerType::get(ctx, 32)});
+      });
+  typeConverter.addTargetMaterialization(
+      [](OpBuilder &builder, LLVM::LLVMStructType type, ValueRange inputs,
+         Location loc) -> Value {
+        return UnrealizedConversionCastOp::create(builder, loc, TypeRange(type),
+                                                  inputs)
+            .getResult(0);
+      });
+  typeConverter.addSourceMaterialization(
+      [](OpBuilder &builder, Torch::DeviceType type, ValueRange inputs,
+         Location loc) -> Value {
+        return UnrealizedConversionCastOp::create(builder, loc, TypeRange(type),
+                                                  inputs)
+            .getResult(0);
+      });
+}
+
 /// Convert Torch StringType to LLVM pointer type.
 static void
 setupTorchStringToLLVMPtrConversion(LLVMTypeConverter &typeConverter) {
@@ -250,6 +277,7 @@ void libtriton::torch::setupBackendTypeConversion(
   setupTorchListToLLVMPtrConversion(typeConverter);
   setupTorchTupleToLLVMStructConversion(typeConverter);
   setupTorchBoolToI1Conversion(typeConverter);
+  setupTorchDeviceToLLVMStructConversion(typeConverter);
   setupTorchIntToI64Conversion(typeConverter);
   setupTorchFloatToF64Conversion(typeConverter);
   setupTorchStringToLLVMPtrConversion(typeConverter);
