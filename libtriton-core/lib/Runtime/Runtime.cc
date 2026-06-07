@@ -2,6 +2,8 @@
 #include "dlpack/dlpack.h"
 #include "torch/csrc/inductor/aoti_torch/c/shim.h"
 
+#include <cstdlib>
+
 // X-Macro: (DLDataTypeCode, bits, aoti_torch_dtype_* function name)
 #define LIBTRITON_TVMFFI_DTYPE_PAIR(X)                                         \
   X(kDLBfloat, 16, aoti_torch_dtype_bfloat16)                                  \
@@ -54,4 +56,45 @@ int32_t mLibTritonTVMFFIDeviceToTorchDeviceType(int32_t dlDeviceType) {
   fprintf(stderr, "Fatal: unhandled DLPack device type=%d\n",
           (int)dlDeviceType);
   abort();
+}
+
+/// Reverse mapping: Torch dtype → DLPack DLDataType.
+/// Uses the same X-Macro pairs as the forward mapping.
+DLDataType mLibTritonTorchToTVMFFIDtype(int32_t torch_dtype) {
+#define X(dlpack_code, dlpack_bits, torch_fn)                                  \
+  if (torch_dtype == torch_fn()) {                                             \
+    return DLDataType{static_cast<uint8_t>(dlpack_code),                       \
+                      static_cast<uint8_t>(dlpack_bits), /*lanes=*/1};         \
+  }
+  LIBTRITON_TVMFFI_DTYPE_PAIR(X)
+#undef X
+  // Fallback: kDLFloat / 32 / lanes=1.
+  return DLDataType{static_cast<uint8_t>(kDLFloat), 32, 1};
+}
+
+/// Reverse mapping: Torch device type → DLPack device type.
+/// Uses the same X-Macro pairs as the forward mapping.
+int32_t mLibTritonTorchToTVMFFIDevice(int32_t torch_device_type) {
+#define X(dlpack_device, torch_fn)                                             \
+  if (torch_device_type == torch_fn()) {                                       \
+    return static_cast<int32_t>(dlpack_device);                                \
+  }
+  LIBTRITON_TVMFFI_DEVICE_PAIR(X)
+#undef X
+  // Fallback: kDLCPU.
+  return static_cast<int32_t>(kDLCPU);
+}
+
+/// DLPack-compatible deleter callback for TVM FFI tensor conversion.
+///
+/// Extracts the AtenTensorHandle stored in self->manager_ctx, deletes it via
+/// aoti_torch_delete_tensor_object, and frees the DLManagedTensor allocation.
+extern "C" void mLibTritonDLManagedTensorDeleter(struct DLManagedTensor *self) {
+  if (self) {
+    if (self->manager_ctx) {
+      aoti_torch_delete_tensor_object(
+          static_cast<AtenTensorHandle>(self->manager_ctx));
+    }
+    std::free(self);
+  }
 }

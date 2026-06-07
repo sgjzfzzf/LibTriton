@@ -9,9 +9,11 @@
 #ifndef LIBTRITON_CORE_CONVERSION_TVMFFITOLLVM_TVMFFICAPIDESCRIPTORS_H_
 #define LIBTRITON_CORE_CONVERSION_TVMFFITOLLVM_TVMFFICAPIDESCRIPTORS_H_
 
+#include "dlpack/dlpack.h"
 #include "libtriton-core/Conversion/Utils/CFunctionDeclUtils.h"
 #include "libtriton-core/Runtime/Runtime.h"
 #include "torch/csrc/inductor/aoti_torch/c/shim.h"
+#include "tvm/ffi/c_api.h"
 
 namespace libtriton::tvm_ffi::capi {
 
@@ -21,6 +23,38 @@ LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(
     mLibTritonTVMFFIDeviceToTorchDeviceType, TVMFFIDeviceToTorchDeviceType)
 LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(mLibTritonTVMFFIToTorchType,
                                            TVMFFIToTorchType)
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(mLibTritonDLManagedTensorDeleter,
+                                           DLManagedTensorDeleter)
+
+// AOTI tensor property accessors.
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(aoti_torch_get_data_ptr,
+                                           AOTITorchGetDataPtr)
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(aoti_torch_get_dim, AOTITorchGetDim)
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(aoti_torch_get_sizes,
+                                           AOTITorchGetSizes)
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(aoti_torch_get_strides,
+                                           AOTITorchGetStrides)
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(aoti_torch_get_dtype,
+                                           AOTITorchGetDtype)
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(aoti_torch_get_device_type,
+                                           AOTITorchGetDeviceType)
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(aoti_torch_get_device_index,
+                                           AOTITorchGetDeviceIndex)
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(aoti_torch_get_storage_offset,
+                                           AOTITorchGetStorageOffset)
+
+// TVM FFI tensor conversion.
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(TVMFFITensorFromDLPack,
+                                           TVMFFITensorFromDLPack)
+
+// Reverse Torch→DLPack dtype/device mapping.
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(mLibTritonTorchToTVMFFIDtype,
+                                           TorchToTVMFFIDtype)
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(mLibTritonTorchToTVMFFIDevice,
+                                           TorchToTVMFFIDevice)
+
+// Standard C library.
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(malloc, Malloc)
 
 } // namespace libtriton::tvm_ffi::capi
 
