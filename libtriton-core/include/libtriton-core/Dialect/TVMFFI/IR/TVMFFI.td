@@ -12,6 +12,7 @@
 include "mlir/IR/OpBase.td"
 
 include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIBase.td"
+include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIAttributes.td"
 include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIOps.td"
 
 #endif // LIBTRITON_CORE_DIALECT_TVMFFI_IR_TVMFFI_TD_

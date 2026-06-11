@@ -3,6 +3,7 @@ add_mlir_dialect_library(
   TVMFFIDialect.cc
   DEPENDS
   MLIRTVMFFIIncGen
+  MLIRTVMFFIAttrDefsIncGen
   LINK_LIBS
   PUBLIC
   MLIRIR

@@ -1,0 +1,164 @@
+// RUN: libtriton-core-opt %s -split-input-file -convert-tvm-ffi-to-llvm | FileCheck %s
+
+// CHECK-LABEL: llvm.func @__tvm_ffi_cuda_device_guard(
+// CHECK:         [[SLOT:%[a-z0-9]+]] = llvm.getelementptr %arg1[0]
+// CHECK:         [[HANDLE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
+// CHECK:         [[HANDLE_I64:%[a-z0-9]+]] = llvm.load [[HANDLE_GEP]]
+// CHECK:         [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[HANDLE_I64]]
+// CHECK:         [[RAW_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
+// CHECK:         [[RAW_I64:%[a-z0-9]+]] = llvm.load [[RAW_GEP]]
+// CHECK:         [[OBJ:%[a-z0-9]+]] = llvm.inttoptr [[RAW_I64]]
+// CHECK:         [[TENSOR:%[a-z0-9]+]] = llvm.getelementptr [[OBJ]][24]
+// CHECK:         [[DEV_TYPE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[TENSOR]][0, 1, 0]
+// CHECK:         [[DEV_TYPE:%[a-z0-9]+]] = llvm.load [[DEV_TYPE_GEP]]
+// CHECK:         [[DEV_ID_GEP:%[a-z0-9]+]] = llvm.getelementptr [[TENSOR]][0, 1, 1]
+// CHECK:         [[DEV_ID:%[a-z0-9]+]] = llvm.load [[DEV_ID_GEP]]
+// CHECK:         [[TYPE_CVAL:%[a-z0-9]+]] = llvm.mlir.constant(2 : i32)
+// CHECK:         [[TYPE_CMP:%[a-z0-9]+]] = llvm.icmp "eq" [[DEV_TYPE]], [[TYPE_CVAL]]
+// CHECK:         [[ID_CVAL:%[a-z0-9]+]] = llvm.mlir.constant(0 : i32)
+// CHECK:         [[ID_CMP:%[a-z0-9]+]] = llvm.icmp "eq" [[DEV_ID]], [[ID_CVAL]]
+// CHECK:         [[AND:%[a-z0-9]+]] = llvm.and [[TYPE_CMP]], [[ID_CMP]]
+// CHECK-NEXT:    llvm.cond_br [[AND]], ^bb{{[0-9]+}}, ^bb{{[0-9]+}}
+// CHECK-NEXT:  ^bb{{[0-9]+}}:
+// CHECK-NEXT:    [[ERR:%[a-z0-9]+]] = llvm.mlir.constant(-1 : i32) : i32
+// CHECK-NEXT:    llvm.return [[ERR]] : i32
+tvm_ffi.func @cuda_device_guard(%arg0: !torch.int {tvm_ffi.guard = #tvm_ffi.CudaDeviceGuard<device_type = 2, device_index = 0>}) {
+  tvm_ffi.return
+}
+
+// -----
+
+// CHECK-LABEL: llvm.func @__tvm_ffi_dimension_guard(
+// CHECK:         [[SLOT:%[a-z0-9]+]] = llvm.getelementptr %arg1[0]
+// CHECK:         [[HANDLE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
+// CHECK:         [[HANDLE_I64:%[a-z0-9]+]] = llvm.load [[HANDLE_GEP]]
+// CHECK:         [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[HANDLE_I64]]
+// CHECK:         [[RAW_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
+// CHECK:         [[RAW_I64:%[a-z0-9]+]] = llvm.load [[RAW_GEP]]
+// CHECK:         [[OBJ:%[a-z0-9]+]] = llvm.inttoptr [[RAW_I64]]
+// CHECK:         [[TENSOR:%[a-z0-9]+]] = llvm.getelementptr [[OBJ]][24]
+// CHECK:         [[NDIM_GEP:%[a-z0-9]+]] = llvm.getelementptr [[TENSOR]][0, 2]
+// CHECK:         [[NDIM:%[a-z0-9]+]] = llvm.load [[NDIM_GEP]]
+// CHECK:         [[EXPECTED:%[a-z0-9]+]] = llvm.mlir.constant(2 : i32) : i32
+// CHECK:         [[CMP:%[a-z0-9]+]] = llvm.icmp "eq" [[NDIM]], [[EXPECTED]]
+// CHECK-NEXT:    llvm.cond_br [[CMP]], ^bb{{[0-9]+}}, ^bb{{[0-9]+}}
+// CHECK-NEXT:  ^bb{{[0-9]+}}:
+// CHECK-NEXT:    [[ERR:%[a-z0-9]+]] = llvm.mlir.constant(-1 : i32) : i32
+// CHECK-NEXT:    llvm.return [[ERR]] : i32
+tvm_ffi.func @dimension_guard(%arg0: !torch.int {tvm_ffi.guard = #tvm_ffi.DimensionGuard<expected = 2>}) {
+  tvm_ffi.return
+}
+
+// -----
+
+// CHECK-LABEL: llvm.func @__tvm_ffi_dtype_guard(
+// CHECK:         [[SLOT:%[a-z0-9]+]] = llvm.getelementptr %arg1[0]
+// CHECK:         [[HANDLE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
+// CHECK:         [[HANDLE_I64:%[a-z0-9]+]] = llvm.load [[HANDLE_GEP]]
+// CHECK:         [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[HANDLE_I64]]
+// CHECK:         [[RAW_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
+// CHECK:         [[RAW_I64:%[a-z0-9]+]] = llvm.load [[RAW_GEP]]
+// CHECK:         [[OBJ:%[a-z0-9]+]] = llvm.inttoptr [[RAW_I64]]
+// CHECK:         [[TENSOR:%[a-z0-9]+]] = llvm.getelementptr [[OBJ]][24]
+// CHECK:         [[DTYPE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[TENSOR]][0, 3]
+// CHECK:         [[DTYPE:%[a-z0-9]+]] = llvm.load [[DTYPE_GEP]]
+// CHECK:         [[TRUE:%[a-z0-9]+]] = llvm.mlir.constant(true) : i1
+// CHECK-NEXT:    llvm.cond_br [[TRUE]], ^bb{{[0-9]+}}, ^bb{{[0-9]+}}
+// CHECK-NEXT:  ^bb{{[0-9]+}}:
+// CHECK-NEXT:    [[ERR:%[a-z0-9]+]] = llvm.mlir.constant(-1 : i32) : i32
+// CHECK-NEXT:    llvm.return [[ERR]] : i32
+tvm_ffi.func @dtype_guard(%arg0: !torch.int {tvm_ffi.guard = #tvm_ffi.DtypeGuard<>}) {
+  tvm_ffi.return
+}
+
+// -----
+
+// CHECK-LABEL: llvm.func @__tvm_ffi_size_guard(
+// CHECK:         [[SLOT:%[a-z0-9]+]] = llvm.getelementptr %arg1[0]
+// CHECK:         [[HANDLE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
+// CHECK:         [[HANDLE_I64:%[a-z0-9]+]] = llvm.load [[HANDLE_GEP]]
+// CHECK:         [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[HANDLE_I64]]
+// CHECK:         [[RAW_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
+// CHECK:         [[RAW_I64:%[a-z0-9]+]] = llvm.load [[RAW_GEP]]
+// CHECK:         [[OBJ:%[a-z0-9]+]] = llvm.inttoptr [[RAW_I64]]
+// CHECK:         [[TENSOR:%[a-z0-9]+]] = llvm.getelementptr [[OBJ]][24]
+// CHECK:         [[SHAPE_PTR_GEP:%[a-z0-9]+]] = llvm.getelementptr [[TENSOR]][0, 4]
+// CHECK:         [[SHAPE_PTR:%[a-z0-9]+]] = llvm.load [[SHAPE_PTR_GEP]]
+// CHECK:         [[SHAPE_ELEM_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SHAPE_PTR]][0]
+// CHECK:         [[SHAPE_ELEM:%[a-z0-9]+]] = llvm.load [[SHAPE_ELEM_GEP]]
+// CHECK:         [[EXP:%[a-z0-9]+]] = llvm.mlir.constant(64 : i64) : i64
+// CHECK:         [[CMP:%[a-z0-9]+]] = llvm.icmp "eq" [[SHAPE_ELEM]], [[EXP]]
+// CHECK-NEXT:    llvm.cond_br [[CMP]], ^bb{{[0-9]+}}, ^bb{{[0-9]+}}
+// CHECK-NEXT:  ^bb{{[0-9]+}}:
+// CHECK-NEXT:    [[ERR:%[a-z0-9]+]] = llvm.mlir.constant(-1 : i32) : i32
+// CHECK-NEXT:    llvm.return [[ERR]] : i32
+tvm_ffi.func @size_guard(%arg0: !torch.int {tvm_ffi.guard = #tvm_ffi.SizeGuard<index = 0, expected = 64>}) {
+  tvm_ffi.return
+}
+
+// -----
+
+// CHECK-LABEL: llvm.func @__tvm_ffi_storage_offset_guard(
+// CHECK:         [[SLOT:%[a-z0-9]+]] = llvm.getelementptr %arg1[0]
+// CHECK:         [[HANDLE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
+// CHECK:         [[HANDLE_I64:%[a-z0-9]+]] = llvm.load [[HANDLE_GEP]]
+// CHECK:         [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[HANDLE_I64]]
+// CHECK:         [[RAW_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
+// CHECK:         [[RAW_I64:%[a-z0-9]+]] = llvm.load [[RAW_GEP]]
+// CHECK:         [[OBJ:%[a-z0-9]+]] = llvm.inttoptr [[RAW_I64]]
+// CHECK:         [[TENSOR:%[a-z0-9]+]] = llvm.getelementptr [[OBJ]][24]
+// CHECK:         [[OFFSET_GEP:%[a-z0-9]+]] = llvm.getelementptr [[TENSOR]][0, 6]
+// CHECK:         [[OFFSET:%[a-z0-9]+]] = llvm.load [[OFFSET_GEP]]
+// CHECK:         [[EXP:%[a-z0-9]+]] = llvm.mlir.constant(0 : i64) : i64
+// CHECK:         [[CMP:%[a-z0-9]+]] = llvm.icmp "eq" [[OFFSET]], [[EXP]]
+// CHECK-NEXT:    llvm.cond_br [[CMP]], ^bb{{[0-9]+}}, ^bb{{[0-9]+}}
+// CHECK-NEXT:  ^bb{{[0-9]+}}:
+// CHECK-NEXT:    [[ERR:%[a-z0-9]+]] = llvm.mlir.constant(-1 : i32) : i32
+// CHECK-NEXT:    llvm.return [[ERR]] : i32
+tvm_ffi.func @storage_offset_guard(%arg0: !torch.int {tvm_ffi.guard = #tvm_ffi.StorageOffsetGuard<expected = 0>}) {
+  tvm_ffi.return
+}
+
+// -----
+
+// CHECK-LABEL: llvm.func @__tvm_ffi_stride_guard(
+// CHECK:         [[SLOT:%[a-z0-9]+]] = llvm.getelementptr %arg1[0]
+// CHECK:         [[HANDLE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
+// CHECK:         [[HANDLE_I64:%[a-z0-9]+]] = llvm.load [[HANDLE_GEP]]
+// CHECK:         [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[HANDLE_I64]]
+// CHECK:         [[RAW_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
+// CHECK:         [[RAW_I64:%[a-z0-9]+]] = llvm.load [[RAW_GEP]]
+// CHECK:         [[OBJ:%[a-z0-9]+]] = llvm.inttoptr [[RAW_I64]]
+// CHECK:         [[TENSOR:%[a-z0-9]+]] = llvm.getelementptr [[OBJ]][24]
+// CHECK:         [[STRIDE_PTR_GEP:%[a-z0-9]+]] = llvm.getelementptr [[TENSOR]][0, 5]
+// CHECK:         [[STRIDE_PTR:%[a-z0-9]+]] = llvm.load [[STRIDE_PTR_GEP]]
+// CHECK:         [[STRIDE_ELEM_GEP:%[a-z0-9]+]] = llvm.getelementptr [[STRIDE_PTR]][1]
+// CHECK:         [[STRIDE_ELEM:%[a-z0-9]+]] = llvm.load [[STRIDE_ELEM_GEP]]
+// CHECK:         [[EXP:%[a-z0-9]+]] = llvm.mlir.constant(1 : i64) : i64
+// CHECK:         [[CMP:%[a-z0-9]+]] = llvm.icmp "eq" [[STRIDE_ELEM]], [[EXP]]
+// CHECK-NEXT:    llvm.cond_br [[CMP]], ^bb{{[0-9]+}}, ^bb{{[0-9]+}}
+// CHECK-NEXT:  ^bb{{[0-9]+}}:
+// CHECK-NEXT:    [[ERR:%[a-z0-9]+]] = llvm.mlir.constant(-1 : i32) : i32
+// CHECK-NEXT:    llvm.return [[ERR]] : i32
+tvm_ffi.func @stride_guard(%arg0: !torch.int {tvm_ffi.guard = #tvm_ffi.StrideGuard<index = 1, expected = 1>}) {
+  tvm_ffi.return
+}
+
+// -----
+
+// CHECK-LABEL: llvm.func @__tvm_ffi_tensor_type_guard(
+// CHECK:         [[SLOT:%[a-z0-9]+]] = llvm.getelementptr %arg1[0]
+// CHECK:         [[HANDLE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
+// CHECK:         [[HANDLE_I64:%[a-z0-9]+]] = llvm.load [[HANDLE_GEP]]
+// CHECK:         [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[HANDLE_I64]]
+// CHECK:         [[TYPE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 0]
+// CHECK:         [[TYPE_CODE:%[a-z0-9]+]] = llvm.load [[TYPE_GEP]]
+// CHECK:         [[EXPECTED:%[a-z0-9]+]] = llvm.mlir.constant(70 : i32) : i32
+// CHECK:         [[CMP:%[a-z0-9]+]] = llvm.icmp "eq" [[TYPE_CODE]], [[EXPECTED]]
+// CHECK-NEXT:    llvm.cond_br [[CMP]], ^bb{{[0-9]+}}, ^bb{{[0-9]+}}
+// CHECK-NEXT:  ^bb{{[0-9]+}}:
+// CHECK-NEXT:    [[ERR:%[a-z0-9]+]] = llvm.mlir.constant(-1 : i32) : i32
+// CHECK-NEXT:    llvm.return [[ERR]] : i32
+tvm_ffi.func @tensor_type_guard(%arg0: !torch.int {tvm_ffi.guard = #tvm_ffi.TensorTypeGuard<>}) {
+  tvm_ffi.return
+}

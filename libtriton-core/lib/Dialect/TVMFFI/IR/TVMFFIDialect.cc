@@ -14,6 +14,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIDialect.h"
+#include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIAttributes.h"
 #include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -23,12 +24,20 @@
 
 #include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIDialect.cpp.inc"
 
+#define GET_ATTRDEF_CLASSES
+#include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIAttributes.cpp.inc"
+
 #define GET_OP_CLASSES
 #include "libtriton-core/Dialect/TVMFFI/IR/TVMFFI.cpp.inc"
 
 namespace libtriton::tvm_ffi {
 
 void TVMFFIDialect::initialize() {
+  addAttributes<
+#define GET_ATTRDEF_LIST
+#include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIAttributes.cpp.inc"
+      >();
+
   addOperations<
 #define GET_OP_LIST
 #include "libtriton-core/Dialect/TVMFFI/IR/TVMFFI.cpp.inc"

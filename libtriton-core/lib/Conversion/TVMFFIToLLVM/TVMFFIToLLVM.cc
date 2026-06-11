@@ -12,6 +12,7 @@
 #include "libtriton-core/Conversion/Utils/LibTritonCAPIDescriptors.h"
 #include "libtriton-core/Conversion/Utils/StdLibCAPIDescriptors.h"
 #include "libtriton-core/Conversion/Utils/TVMFFICAPIDescriptors.h"
+#include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIAttributes.h"
 #include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIDialect.h"
 #include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIOps.h"
 #include "libtriton-core/Dialect/TorchExt/Transforms/BackendTypeConversion.h"
@@ -22,6 +23,7 @@
 #include "mlir/Dialect/Func/Transforms/FuncConversions.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -40,6 +42,8 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/FormatVariadic.h"
 
+#include <string>
+
 namespace libtriton::tvm_ffi {
 
 #define GEN_PASS_DEF_CONVERTTVMFFITOLLVM
@@ -47,13 +51,75 @@ namespace libtriton::tvm_ffi {
 
 namespace {
 
-class Aux {};
+//===----------------------------------------------------------------------===//
+// DLPack LLVM struct type helpers
+//===----------------------------------------------------------------------===//
+
+/// Returns the packed LLVM struct type matching DLDevice:
+///   { i32 device_type, i32 device_id }  (8 bytes)
+static mlir::LLVM::LLVMStructType getDLDeviceType(mlir::MLIRContext *context) {
+  mlir::IntegerType i32Ty = mlir::IntegerType::get(context, 32);
+  return mlir::LLVM::LLVMStructType::getLiteral(context, {i32Ty, i32Ty},
+                                                /*packed=*/false);
+}
+
+/// Returns the packed LLVM struct type matching DLDataType:
+///   { i8 code, i8 bits, i16 lanes }  (4 bytes)
+static mlir::LLVM::LLVMStructType getDLDataType(mlir::MLIRContext *context) {
+  mlir::IntegerType i8Ty = mlir::IntegerType::get(context, 8);
+  mlir::IntegerType i16Ty = mlir::IntegerType::get(context, 16);
+  return mlir::LLVM::LLVMStructType::getLiteral(context, {i8Ty, i8Ty, i16Ty},
+                                                /*packed=*/false);
+}
+
+/// Returns the packed LLVM struct type matching DLTensor (48 bytes).
+///
+/// DLTensor layout (field indices → offsets):
+///   0: data        : ptr                               (offset  0)
+///   1: device      : DLDevice    = {i32, i32}          (offset  8)
+///   2: ndim        : i32                               (offset 16)
+///   3: dtype       : DLDataType  = {i8, i8, i16}       (offset 20)
+///   4: shape       : ptr                               (offset 24)
+///   5: strides     : ptr                               (offset 32)
+///   6: byte_offset : i64                               (offset 40)
+static mlir::LLVM::LLVMStructType getDLTensorType(mlir::MLIRContext *context) {
+  mlir::IntegerType i32Ty = mlir::IntegerType::get(context, 32);
+  mlir::IntegerType i64Ty = mlir::IntegerType::get(context, 64);
+  mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(context);
+  return mlir::LLVM::LLVMStructType::getLiteral(
+      context, {ptrTy, getDLDeviceType(context), i32Ty, getDLDataType(context),
+                ptrTy, ptrTy, i64Ty});
+}
+
+struct Aux {};
 
 static mlir::LLVM::LLVMStructType getTVMFFIAnyType(mlir::MLIRContext *context) {
   mlir::IntegerType i32Ty = mlir::IntegerType::get(context, 32);
   mlir::IntegerType i64Ty = mlir::IntegerType::get(context, 64);
-  return mlir::LLVM::LLVMStructType::getLiteral(context, {i32Ty, i32Ty, i64Ty},
-                                                true);
+  return mlir::LLVM::LLVMStructType::getLiteral(context, {i32Ty, i32Ty, i64Ty});
+}
+
+/// Helper: given a TVMFFIAny* slot, load the TVMFFIObjectHandle from slot[2],
+/// inttoptr it, and advance past the 24-byte header to produce a DLTensor*.
+static mlir::Value getDLTensorPtr(mlir::OpBuilder &builder, mlir::Value slot) {
+  mlir::Location loc = slot.getLoc();
+  mlir::MLIRContext *ctx = builder.getContext();
+  mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
+  mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
+  mlir::LLVM::LLVMStructType anyTy = getTVMFFIAnyType(ctx);
+  mlir::IntegerType i8Ty = mlir::IntegerType::get(ctx, 8);
+
+  mlir::Value handlePtr =
+      mlir::LLVM::GEPOp::create(builder, loc, ptrTy, anyTy, slot,
+                                mlir::ArrayRef<mlir::LLVM::GEPArg>{0, 2});
+  mlir::Value handleInt =
+      mlir::LLVM::LoadOp::create(builder, loc, i64Ty, handlePtr);
+  mlir::Value handleObj =
+      mlir::LLVM::IntToPtrOp::create(builder, loc, ptrTy, handleInt);
+
+  return mlir::LLVM::GEPOp::create(
+      builder, loc, ptrTy, i8Ty, handleObj,
+      mlir::ArrayRef<mlir::LLVM::GEPArg>{sizeof(TVMFFIObject)});
 }
 
 //===----------------------------------------------------------------------===//
@@ -227,6 +293,269 @@ struct NoneHandler : TypeHandlerBase<mlir::torch::Torch::NoneType> {
 };
 
 //===----------------------------------------------------------------------===//
+// Guard handler framework — dispatches on tvm_ffi.guard argument attributes
+//===----------------------------------------------------------------------===//
+
+/// Base CRTP class for guard handlers. Subclasses must define:
+///   static ::mlir::Value
+///   check(::mlir::OpBuilder &builder, ::mlir::Value slot,
+///         ::mlir::Attribute attr);
+template <typename Concrete, typename GuardAttr> struct GuardHandlerBase {
+  using AttrType = GuardAttr;
+
+  static bool matches(mlir::Attribute attr) {
+    return mlir::isa<GuardAttr>(attr);
+  }
+
+  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value, AttrType) {
+    return mlir::LLVM::ConstantOp::create(
+        builder, builder.getUnknownLoc(),
+        mlir::IntegerType::get(builder.getContext(), 1), 1);
+  }
+};
+
+// ── Concrete guard handlers (placeholders — real checks TBD) ──
+
+/// Helper: load type_code from slot[0] and compare against expected value.
+static mlir::Value checkTypeCode(mlir::OpBuilder &builder, mlir::Value slot,
+                                 int32_t expectedTypeCode) {
+  mlir::Location loc = slot.getLoc();
+  mlir::IntegerType i32Ty = mlir::IntegerType::get(builder.getContext(), 32);
+  mlir::LLVM::LLVMPointerType ptrTy =
+      mlir::LLVM::LLVMPointerType::get(builder.getContext());
+  mlir::LLVM::LLVMStructType anyTy = getTVMFFIAnyType(builder.getContext());
+
+  mlir::Value typeCodePtr =
+      mlir::LLVM::GEPOp::create(builder, loc, ptrTy, anyTy, slot,
+                                mlir::ArrayRef<mlir::LLVM::GEPArg>{0, 0});
+  mlir::Value loadedTypeCode =
+      mlir::LLVM::LoadOp::create(builder, loc, i32Ty, typeCodePtr);
+  mlir::Value expected =
+      mlir::LLVM::ConstantOp::create(builder, loc, i32Ty, expectedTypeCode);
+  return mlir::LLVM::ICmpOp::create(builder, loc, mlir::LLVM::ICmpPredicate::eq,
+                                    loadedTypeCode, expected);
+}
+
+struct CUDADeviceGuardHandler
+    : GuardHandlerBase<CUDADeviceGuardHandler, tvm_ffi::CudaDeviceGuardAttr> {
+  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
+                           AttrType attr) {
+    int64_t deviceType = attr.getDeviceType();
+    int64_t deviceIndex = attr.getDeviceIndex();
+
+    mlir::Location loc = slot.getLoc();
+    mlir::MLIRContext *ctx = builder.getContext();
+    mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
+    mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
+    mlir::LLVM::LLVMStructType dlTensorTy = getDLTensorType(ctx);
+
+    mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
+
+    mlir::Value typeGep =
+        mlir::LLVM::GEPOp::create(builder, loc, ptrTy, dlTensorTy, dlTensorPtr,
+                                  mlir::ArrayRef<mlir::LLVM::GEPArg>{0, 1, 0});
+    mlir::Value loadedType =
+        mlir::LLVM::LoadOp::create(builder, loc, i32Ty, typeGep);
+
+    mlir::Value idGep =
+        mlir::LLVM::GEPOp::create(builder, loc, ptrTy, dlTensorTy, dlTensorPtr,
+                                  mlir::ArrayRef<mlir::LLVM::GEPArg>{0, 1, 1});
+    mlir::Value loadedId =
+        mlir::LLVM::LoadOp::create(builder, loc, i32Ty, idGep);
+
+    mlir::Value expectedType = mlir::LLVM::ConstantOp::create(
+        builder, loc, i32Ty, static_cast<int32_t>(deviceType));
+    mlir::Value typeCmp = mlir::LLVM::ICmpOp::create(
+        builder, loc, mlir::LLVM::ICmpPredicate::eq, loadedType, expectedType);
+
+    mlir::Value expectedId = mlir::LLVM::ConstantOp::create(
+        builder, loc, i32Ty, static_cast<int32_t>(deviceIndex));
+    mlir::Value idCmp = mlir::LLVM::ICmpOp::create(
+        builder, loc, mlir::LLVM::ICmpPredicate::eq, loadedId, expectedId);
+
+    return mlir::LLVM::AndOp::create(builder, loc, typeCmp, idCmp);
+  }
+};
+
+struct DimensionGuardHandler
+    : GuardHandlerBase<DimensionGuardHandler, DimensionGuardAttr> {
+  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
+                           AttrType attr) {
+    int64_t expectedVal = attr.getExpected();
+
+    mlir::Location loc = slot.getLoc();
+    mlir::MLIRContext *ctx = builder.getContext();
+    mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
+    mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
+    mlir::LLVM::LLVMStructType dlTensorTy = getDLTensorType(ctx);
+
+    mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
+
+    mlir::Value ndimGep =
+        mlir::LLVM::GEPOp::create(builder, loc, ptrTy, dlTensorTy, dlTensorPtr,
+                                  mlir::ArrayRef<mlir::LLVM::GEPArg>{0, 2});
+    mlir::Value ndimVal =
+        mlir::LLVM::LoadOp::create(builder, loc, i32Ty, ndimGep);
+
+    mlir::Value expected =
+        mlir::LLVM::ConstantOp::create(builder, loc, i32Ty, expectedVal);
+    return mlir::LLVM::ICmpOp::create(
+        builder, loc, mlir::LLVM::ICmpPredicate::eq, ndimVal, expected);
+  }
+};
+
+struct DTypeGuardHandler : GuardHandlerBase<DTypeGuardHandler, DtypeGuardAttr> {
+  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
+                           AttrType) {
+    // TODO: The DtypeGuardAttr has no parameters yet. Once dtype fields
+    // (code/bits/lanes) are added, compare DLDataType from DLTensor field 3.
+    // For now, read the DLDataType struct as a placeholder.
+    mlir::Location loc = slot.getLoc();
+    mlir::MLIRContext *ctx = builder.getContext();
+    mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
+    mlir::LLVM::LLVMStructType dlTensorTy = getDLTensorType(ctx);
+
+    mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
+
+    // Load DLDataType from DLTensor field 3 (code, bits, lanes).
+    mlir::Value dtypeGep =
+        mlir::LLVM::GEPOp::create(builder, loc, ptrTy, dlTensorTy, dlTensorPtr,
+                                  mlir::ArrayRef<mlir::LLVM::GEPArg>{0, 3});
+    mlir::LLVM::LLVMStructType dlDtypeTy = getDLDataType(ctx);
+    mlir::LLVM::LoadOp::create(builder, loc, dlDtypeTy, dtypeGep);
+
+    // Always succeed for now (dtype comparison TBD).
+    return mlir::LLVM::ConstantOp::create(
+        builder, loc, mlir::IntegerType::get(builder.getContext(), 1), 1);
+  }
+};
+
+struct SizeGuardHandler : GuardHandlerBase<SizeGuardHandler, SizeGuardAttr> {
+  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
+                           AttrType attr) {
+    int64_t index = attr.getIndex();
+    int64_t expectedVal = attr.getExpected();
+
+    mlir::Location loc = slot.getLoc();
+    mlir::MLIRContext *ctx = builder.getContext();
+    mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
+    mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
+    mlir::LLVM::LLVMStructType dlTensorTy = getDLTensorType(ctx);
+
+    mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
+
+    mlir::Value shapePtrGep =
+        mlir::LLVM::GEPOp::create(builder, loc, ptrTy, dlTensorTy, dlTensorPtr,
+                                  mlir::ArrayRef<mlir::LLVM::GEPArg>{0, 4});
+    mlir::Value shapePtr =
+        mlir::LLVM::LoadOp::create(builder, loc, ptrTy, shapePtrGep);
+
+    mlir::Value elemGep = mlir::LLVM::GEPOp::create(
+        builder, loc, ptrTy, i64Ty, shapePtr,
+        mlir::ArrayRef<mlir::LLVM::GEPArg>{static_cast<int32_t>(index)});
+    mlir::Value elemVal =
+        mlir::LLVM::LoadOp::create(builder, loc, i64Ty, elemGep);
+
+    mlir::Value expected =
+        mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, expectedVal);
+    return mlir::LLVM::ICmpOp::create(
+        builder, loc, mlir::LLVM::ICmpPredicate::eq, elemVal, expected);
+  }
+};
+
+struct StorageOffsetGuardHandler
+    : GuardHandlerBase<StorageOffsetGuardHandler, StorageOffsetGuardAttr> {
+  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
+                           AttrType attr) {
+    int64_t expectedVal = attr.getExpected();
+
+    mlir::Location loc = slot.getLoc();
+    mlir::MLIRContext *ctx = builder.getContext();
+    mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
+    mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
+    mlir::LLVM::LLVMStructType dlTensorTy = getDLTensorType(ctx);
+
+    mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
+
+    mlir::Value offsetGep =
+        mlir::LLVM::GEPOp::create(builder, loc, ptrTy, dlTensorTy, dlTensorPtr,
+                                  mlir::ArrayRef<mlir::LLVM::GEPArg>{0, 6});
+    mlir::Value offsetVal =
+        mlir::LLVM::LoadOp::create(builder, loc, i64Ty, offsetGep);
+
+    mlir::Value expected =
+        mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, expectedVal);
+    return mlir::LLVM::ICmpOp::create(
+        builder, loc, mlir::LLVM::ICmpPredicate::eq, offsetVal, expected);
+  }
+};
+
+struct StrideGuardHandler
+    : GuardHandlerBase<StrideGuardHandler, StrideGuardAttr> {
+  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
+                           AttrType attr) {
+    int64_t index = attr.getIndex();
+    int64_t expectedVal = attr.getExpected();
+
+    mlir::Location loc = slot.getLoc();
+    mlir::MLIRContext *ctx = builder.getContext();
+    mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
+    mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
+    mlir::LLVM::LLVMStructType dlTensorTy = getDLTensorType(ctx);
+
+    mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
+
+    mlir::Value stridePtrGep =
+        mlir::LLVM::GEPOp::create(builder, loc, ptrTy, dlTensorTy, dlTensorPtr,
+                                  mlir::ArrayRef<mlir::LLVM::GEPArg>{0, 5});
+    mlir::Value stridePtr =
+        mlir::LLVM::LoadOp::create(builder, loc, ptrTy, stridePtrGep);
+
+    mlir::Value elemGep = mlir::LLVM::GEPOp::create(
+        builder, loc, ptrTy, i64Ty, stridePtr,
+        mlir::ArrayRef<mlir::LLVM::GEPArg>{static_cast<int32_t>(index)});
+    mlir::Value elemVal =
+        mlir::LLVM::LoadOp::create(builder, loc, i64Ty, elemGep);
+
+    mlir::Value expected =
+        mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, expectedVal);
+    return mlir::LLVM::ICmpOp::create(
+        builder, loc, mlir::LLVM::ICmpPredicate::eq, elemVal, expected);
+  }
+};
+
+struct TensorTypeGuardHandler
+    : GuardHandlerBase<TensorTypeGuardHandler, TensorTypeGuardAttr> {
+  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
+                           AttrType) {
+    return checkTypeCode(builder, slot, kTVMFFITensor);
+  }
+};
+
+/// Fold-expression dispatch over variadic handler types.
+template <typename... Handlers> struct GuardDispatch {
+  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
+                           mlir::Attribute attr) {
+    mlir::Value result;
+    // Try each handler; the first one that matches wins.
+    (void)((Handlers::matches(attr)
+                ? (result = Handlers::check(
+                       builder, slot,
+                       mlir::cast<typename Handlers::AttrType>(attr)),
+                   true)
+                : false) ||
+           ...);
+    return result;
+  }
+};
+
+using AllGuardHandlers =
+    GuardDispatch<CUDADeviceGuardHandler, DimensionGuardHandler,
+                  DTypeGuardHandler, SizeGuardHandler,
+                  StorageOffsetGuardHandler, StrideGuardHandler,
+                  TensorTypeGuardHandler>;
+
+//===----------------------------------------------------------------------===//
 // Variadic dispatch: folds over handlers, short-circuits on first match
 //===----------------------------------------------------------------------===//
 
@@ -315,8 +644,7 @@ public:
     rewriter.setInsertionPointToStart(entryBlock);
     mlir::LLVM::LLVMStructType anyTy = getTVMFFIAnyType(context);
     Aux aux;
-    mlir::Block &entry = op.getBody().front();
-    for (auto [i, arg] : llvm::enumerate(entry.getArguments())) {
+    for (auto [i, arg] : llvm::enumerate(op.getArguments())) {
       mlir::Value slot =
           mlir::LLVM::GEPOp::create(rewriter, loc, ptrTy, anyTy, argsPtr,
                                     mlir::ArrayRef<mlir::LLVM::GEPArg>{i});
@@ -330,6 +658,32 @@ public:
                                rewriter, loc, argTy, *loaded)
                                .getResult(0);
       mapping.map(arg, casted);
+
+      // ── Guard checking: if guard fails, return immediately with -1 ──
+      if (mlir::Attribute guardAttr = op.getArgAttr(i, "tvm_ffi.guard")) {
+        mlir::Value guardResult =
+            AllGuardHandlers::check(rewriter, slot, guardAttr);
+        if (!guardResult) {
+          return op.emitError("unsupported guard attribute on argument ") << i;
+        }
+
+        mlir::Block *currentBlock = rewriter.getInsertionBlock();
+        // Create fail block that returns error code.
+        mlir::Block *failBlock = rewriter.createBlock(&region);
+        rewriter.setInsertionPointToStart(failBlock);
+        mlir::LLVM::ConstantOp errCode =
+            mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, -1);
+        mlir::LLVM::ReturnOp::create(rewriter, loc, errCode);
+
+        // Create continue block for subsequent operations.
+        mlir::Block *contBlock = rewriter.createBlock(&region);
+        rewriter.setInsertionPointToEnd(currentBlock);
+        mlir::LLVM::CondBrOp::create(rewriter, loc, guardResult, contBlock,
+                                     failBlock);
+
+        // Subsequent operations go into the continue block.
+        rewriter.setInsertionPointToStart(contBlock);
+      }
     }
 
     // Step 3: Create mapped body blocks (placed after any split blocks).
@@ -343,11 +697,11 @@ public:
       mapping.map(&blk, newBlock);
     }
 
-    // Step 4: Branch from the merge block to the first body block.
+    // Step 4: Branch from the last guard-check block to the first body block.
     assert(firstBodyBlock && "expected at least one block in function body");
     mlir::LLVM::BrOp::create(rewriter, loc, firstBodyBlock);
 
-    // Step 5: Clone original function body ops into the mapped body blocks.
+    // Step 6: Clone original function body ops into the mapped body blocks.
     for (mlir::Block &blk : op.getBody()) {
       mlir::Block *dest = mapping.lookupOrDefault(&blk);
       rewriter.setInsertionPointToEnd(dest);

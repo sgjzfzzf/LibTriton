@@ -9,13 +9,13 @@ from .check import CheckGuard
 
 class CUDADeviceGuard(CheckGuard):
     _regex_pattern: re.Pattern = re.compile(
-        rf"str\({CheckGuard._regex_variable}\.device\) == 'cuda:(\d+)'"
+        rf"str\({CheckGuard._regex_variable}\.device\) == '(cuda:\d+)'"
     )
 
-    def __init__(self, variable: str, expected: int, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, variable: str, expected: str, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.variable: Final[str] = variable
-        self.expected: Final[int] = expected
+        self.expected: Final[str] = expected
 
     @override
     def __hash__(self) -> int:
@@ -26,6 +26,6 @@ class CUDADeviceGuard(CheckGuard):
     def _parse(cls, code: str) -> Optional[CUDADeviceGuard]:
         if match := cls._regex_pattern.match(code):
             variable, expected = match.groups()
-            return CUDADeviceGuard(variable, int(expected))
+            return CUDADeviceGuard(variable, expected)
         else:
             return None

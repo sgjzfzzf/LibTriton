@@ -78,7 +78,7 @@ func.func @torch.aten.empty_like(%arg0: !torch.vtensor<[200,200,26],f64>) -> !to
 // then wrap result into TVMFFIAny struct before storing to retPtr.
 // CHECK:         %[[ZERO:.*]] = llvm.mlir.constant(0 : i32) : i32
 // CHECK:         %[[TYPE70:.*]] = llvm.mlir.constant(70 : i32) : i32
-// CHECK:         %[[UNDEF:.*]] = llvm.mlir.undef : !llvm.struct<packed (i32, i32, i64)>
+// CHECK:         %[[UNDEF:.*]] = llvm.mlir.undef : !llvm.struct<(i32, i32, i64)>
 // CHECK:         %[[VOBJ_GEP:.*]] = llvm.getelementptr %[[WRAP_ARGS]][0, 2]
 // CHECK:         %[[VOBJ_I64:.*]] = llvm.load %[[VOBJ_GEP]]
 // CHECK:         %[[ARG_HANDLE:.*]] = llvm.inttoptr %[[VOBJ_I64]]

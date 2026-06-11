@@ -22,6 +22,8 @@ def TVMFFI_Dialect : Dialect {
     invoking TVM runtime functions, and converting between TVM and native data
     types.
   }];
+
+  let useDefaultAttributePrinterParser = 1;
 }
 
 #endif // LIBTRITON_CORE_DIALECT_TVMFFI_IR_TVMFFIBASE_TD_
