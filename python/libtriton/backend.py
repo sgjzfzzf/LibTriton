@@ -38,6 +38,7 @@ class LibTritonGraphModule(object):
         gm, _guards = torch._dynamo.export(
             self.fn, aten_graph=True, assume_static_by_default=True
         )(*args)
+        gm(*args)  # Warmup
 
         # Step 2: Import FX graph into MLIR using Torch-MLIR's FxImporter
         importer = LibTritonFxImporter(context=self.ctx)
