@@ -39,8 +39,8 @@ def TVMFFI_CUDADeviceGuardAttr : TVMFFI_GuardAttr<"CudaDeviceGuard"> {
       [{Guards that a tensor variable resides on a specific CUDA device.}];
 
   let parameters = (ins "int64_t" : $device_type, "int64_t" : $device_index);
-  let assemblyFormat =
-      "`<` `device_type` `=` $device_type `,` `device_index` `=` $device_index `>`";
+  let assemblyFormat = "`<` `device_type` `=` $device_type `,` `device_index` "
+                       "`=` $device_index `>`";
 }
 
 //===----------------------------------------------------------------------===//

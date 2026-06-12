@@ -36,6 +36,12 @@ LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(aoti_torch_get_device_index,
 LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(aoti_torch_get_storage_offset,
                                            AOTITorchGetStorageOffset)
 
+// AOTI device/stream helpers.
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(aoti_torch_get_current_device_index,
+                                           AOTITorchGetCurrentDeviceIndex)
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(aoti_torch_get_current_stream,
+                                           AOTITorchGetCurrentStream)
+
 } // namespace libtriton::conversion::utils
 
 #endif // LIBTRITON_CORE_CONVERSION_UTILS_AOTICAPIDESCRIPTORS_H_

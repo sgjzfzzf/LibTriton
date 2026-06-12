@@ -4,6 +4,7 @@ add_mlir_library(
   LINK_LIBS
   PUBLIC
   TorchExtTransforms
+  TorchExtToGPU
   TorchExtToLLVM
   MLIRRegisterAllDialects
   MLIRRegisterAllExtensions

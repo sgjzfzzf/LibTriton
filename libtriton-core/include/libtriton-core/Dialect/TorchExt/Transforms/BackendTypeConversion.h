@@ -12,10 +12,6 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Transforms/DialectConversion.h"
 
-namespace mlir {
-class LLVMTypeConverter;
-} // namespace mlir
-
 namespace libtriton::torch {
 
 /// Populate function callback type conversion patterns and set up legality.
@@ -40,7 +36,7 @@ void populateFuncBackendTypeConversionPatterns(
 ///   - Torch TupleType -> llvm.struct
 /// Generator conversion is not implemented yet.
 void setupBackendTypeConversion(mlir::ConversionTarget &target,
-                                mlir::LLVMTypeConverter &typeConverter);
+                                mlir::TypeConverter &typeConverter);
 
 } // namespace libtriton::torch
 

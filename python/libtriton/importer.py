@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import random
-import re
 from typing import Any, Dict, List, Optional, Tuple
 from typing_extensions import Final
 
@@ -9,7 +8,13 @@ import torch
 import triton
 
 from libtriton._C.libtriton_core import ir
-from libtriton._C.libtriton_core.dialects import arith, func, gpu, llvm, torch_ext
+from libtriton._C.libtriton_core.dialects import (
+    arith,
+    func,
+    gpu,
+    torch as torch_d,
+    torchext,
+)
 from libtriton._C.libtriton_core.extras.fx_importer import FxImporter, GraphNodeImporter
 
 
@@ -18,7 +23,6 @@ class LibTritonGraphNodeImporter(GraphNodeImporter):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self._async_token: Optional[ir.Value] = None
 
     @staticmethod
     def _runtime_parameters(
@@ -59,23 +63,6 @@ class LibTritonGraphNodeImporter(GraphNodeImporter):
                     loc=loc,
                 )
 
-    @staticmethod
-    def _triton_type_to_ir_type(triton_type: str) -> ir.Type:
-        if triton_type.startswith("*"):
-            return llvm.PointerType.get()
-        elif triton_type == "bf16":
-            return ir.BF16Type.get()
-        elif triton_type == "fp16":
-            return ir.F16Type.get()
-        elif triton_type == "fp32":
-            return ir.F32Type.get()
-        elif triton_type == "fp64":
-            return ir.F64Type.get()
-        elif triton_type.startswith(("i", "u")):
-            return ir.IntegerType.get_signless(int(triton_type[1:]))
-        else:
-            assert False, f"unsupported Triton type: {triton_type}"
-
     def _materialize_runtime_argument(
         self,
         loc: Any,
@@ -87,50 +74,19 @@ class LibTritonGraphNodeImporter(GraphNodeImporter):
         if value := imported_values.get(name):
             return value
         elif value := constant_args.get(name):
-            target_type = self._triton_type_to_ir_type(triton_type)
             with loc:
                 if triton_type.startswith("*") and value is None:
                     return self._make_null_ptr()
                 elif triton_type.startswith(("i", "u")):
-                    return arith.constant(target_type, int(value))
+                    return torch_d.ConstantIntOp(int(value))
                 elif triton_type in ("fp16", "bf16", "fp32", "fp64"):
-                    return arith.constant(target_type, float(value))
+                    return torch_d.ConstantFloatOp(float(value))
                 else:
                     assert False, f"unsupported constant argument type: {triton_type}"
         else:
             assert False, f"missing runtime argument for {name} of type {triton_type}"
 
-    @staticmethod
-    def _vtensor_type_to_builtin_tensor_type(value_type: ir.Type) -> Optional[ir.Type]:
-        value_type_asm: str = f"{value_type}"
-        match: Optional[re.Match[str]] = re.match(
-            r"^!torch\.vtensor<\[(\d*(?:,\d*)*)\],([fiu]\d+)>$", value_type_asm
-        )
-        if match is None:
-            return None
-        else:
-            shape_asm, element_type_asm = match.groups()
-            literals: List[str] = shape_asm.split(",") + [element_type_asm]
-            return ir.Type.parse("tensor<{}>".format("x".join(literals)))
-
-    @staticmethod
-    def _to_builtin_launch_operand(operand: ir.Value, loc: ir.Location) -> ir.Value:
-        builtin_tensor_type: Optional[ir.Type] = (
-            LibTritonGraphNodeImporter._vtensor_type_to_builtin_tensor_type(
-                operand.type
-            )
-        )
-        if builtin_tensor_type is None:
-            return operand
-        else:
-            return ir.Operation.create(
-                "torch_c.to_builtin_tensor",
-                results=[builtin_tensor_type],
-                operands=[operand],
-                loc=loc,
-            ).result
-
-    def _emit_async_triton_kernel_launch(
+    def _emit_triton_kernel_launch(
         self,
         loc: Any,
         kernel_attr: ir.Attribute,
@@ -141,21 +97,8 @@ class LibTritonGraphNodeImporter(GraphNodeImporter):
     ) -> None:
         index_type = ir.IndexType.get()
         i32_type = ir.IntegerType.get_signless(32)
-        if self._async_token is None:
-            async_token_type = ir.Type.parse("!gpu.async.token")
-            stream: ir.Value = torch_ext.get_current_stream(
-                async_token_type,
-                device=-1,
-                loc=loc,
-            )
-            async_dependencies = [stream]
-        else:
-            async_token_type = self._async_token.type
-            async_dependencies = [self._async_token]
         grid_x, grid_y, grid_z = grid
-        launch_op = torch_ext.TritonKernelLaunchOp(
-            async_token_type,
-            async_dependencies,
+        torchext.TritonKernelLaunchOp(
             kernel_attr,
             arith.constant(index_type, grid_x, loc=loc),
             arith.constant(index_type, grid_y, loc=loc),
@@ -163,16 +106,12 @@ class LibTritonGraphNodeImporter(GraphNodeImporter):
             arith.constant(index_type, block_size_x, loc=loc),
             arith.constant(index_type, 1, loc=loc),
             arith.constant(index_type, 1, loc=loc),
-            [
-                LibTritonGraphNodeImporter._to_builtin_launch_operand(operand, loc)
-                for operand in operands
-            ],
+            operands,
             dynamicSharedMemorySize=arith.constant(
                 i32_type, dynamic_shared_memory_size, loc=loc
             ),
             loc=loc,
         )
-        self._async_token = launch_op.asyncToken
 
     def _import_hop_triton_kernel_wrapper_mutation(
         self,
@@ -226,7 +165,7 @@ class LibTritonGraphNodeImporter(GraphNodeImporter):
         (grid,) = node.kwargs["grid"]
         binary_name: Final[str] = f"_{node.name}_{random.randint(0, 1 << 32)}"
         self._add_gpu_binary(loc, self.fx_importer.module, binary_name, kernel)
-        self._emit_async_triton_kernel_launch(
+        self._emit_triton_kernel_launch(
             loc,
             ir.Attribute.parse(f"@{binary_name}::@{kernel.metadata.name}"),
             grid,

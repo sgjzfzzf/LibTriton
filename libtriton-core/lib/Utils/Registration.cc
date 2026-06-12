@@ -3,6 +3,7 @@
 #include "libtriton-core/Conversion/Pipeline/Pipeline.h"
 #include "libtriton-core/Conversion/TVMFFIToLLVM/TVMFFIToLLVM.h"
 #include "libtriton-core/Conversion/TorchConversionToLLVM/TorchConversionToLLVM.h"
+#include "libtriton-core/Conversion/TorchExtToGPU/TorchExtToGPU.h"
 #include "libtriton-core/Conversion/TorchExtToLLVM/TorchExtToLLVM.h"
 #include "libtriton-core/Conversion/TorchToCf/TorchToCf.h"
 #include "libtriton-core/Conversion/TorchToLLVM/FuncBackendTypeConversion.h"
@@ -24,6 +25,7 @@ void libtriton::conversion::registerAllPasses() {
   mlir::registerAllPasses();
   mlir::registerConvertToLLVMPass();
   mlir::registerReconcileUnrealizedCastsPass();
+  libtriton::torchext::registerConvertTorchExtToGPUPass();
   libtriton::torchext::registerConvertTorchExtToLLVMPass();
   libtriton::torchext::registerRewriteTorchAsTorchExtPass();
   libtriton::tvm_ffi::registerConvertTVMFFIToLLVMPass();
@@ -42,6 +44,7 @@ void libtriton::conversion::registerAllDialects(
                   mlir::torch::Torch::TorchDialect,
                   mlir::torch::TorchConversion::TorchConversionDialect>();
   mlir::registerAllExtensions(registry);
+  libtriton::torchext::registerConvertTorchExtToGPUInterface(registry);
   libtriton::torchext::registerConvertTorchExtToLLVMInterface(registry);
   libtriton::tvm_ffi::registerConvertTVMFFIToLLVMInterface(registry);
   libtriton::torch::registerConvertTorchConversionToLLVMInterface(registry);

@@ -1,3 +1,4 @@
+add_subdirectory(TorchExtToGPU)
 add_subdirectory(TorchExtToLLVM)
 add_subdirectory(TVMFFIToLLVM)
 add_subdirectory(TorchConversionToLLVM)

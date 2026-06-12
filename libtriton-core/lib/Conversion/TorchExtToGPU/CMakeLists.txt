@@ -1,0 +1,10 @@
+add_mlir_conversion_library(
+  TorchExtToGPU
+  TorchExtToGPU.cc
+  DEPENDS
+  MLIRConversionPassIncGen
+  LINK_LIBS
+  PUBLIC
+  TorchExtDialect
+  MLIRGPUDialect
+  MLIRPass)

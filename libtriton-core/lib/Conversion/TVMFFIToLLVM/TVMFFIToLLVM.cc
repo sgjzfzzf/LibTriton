@@ -12,6 +12,7 @@
 #include "libtriton-core/Conversion/Utils/LibTritonCAPIDescriptors.h"
 #include "libtriton-core/Conversion/Utils/StdLibCAPIDescriptors.h"
 #include "libtriton-core/Conversion/Utils/TVMFFICAPIDescriptors.h"
+#include "libtriton-core/Conversion/Utils/Type.h"
 #include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIAttributes.h"
 #include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIDialect.h"
 #include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIOps.h"
@@ -51,45 +52,9 @@ namespace libtriton::tvm_ffi {
 
 namespace {
 
-//===----------------------------------------------------------------------===//
-// DLPack LLVM struct type helpers
-//===----------------------------------------------------------------------===//
-
-/// Returns the packed LLVM struct type matching DLDevice:
-///   { i32 device_type, i32 device_id }  (8 bytes)
-static mlir::LLVM::LLVMStructType getDLDeviceType(mlir::MLIRContext *context) {
-  mlir::IntegerType i32Ty = mlir::IntegerType::get(context, 32);
-  return mlir::LLVM::LLVMStructType::getLiteral(context, {i32Ty, i32Ty},
-                                                /*packed=*/false);
-}
-
-/// Returns the packed LLVM struct type matching DLDataType:
-///   { i8 code, i8 bits, i16 lanes }  (4 bytes)
-static mlir::LLVM::LLVMStructType getDLDataType(mlir::MLIRContext *context) {
-  mlir::IntegerType i8Ty = mlir::IntegerType::get(context, 8);
-  mlir::IntegerType i16Ty = mlir::IntegerType::get(context, 16);
-  return mlir::LLVM::LLVMStructType::getLiteral(context, {i8Ty, i8Ty, i16Ty},
-                                                /*packed=*/false);
-}
-
-/// Returns the packed LLVM struct type matching DLTensor (48 bytes).
-///
-/// DLTensor layout (field indices → offsets):
-///   0: data        : ptr                               (offset  0)
-///   1: device      : DLDevice    = {i32, i32}          (offset  8)
-///   2: ndim        : i32                               (offset 16)
-///   3: dtype       : DLDataType  = {i8, i8, i16}       (offset 20)
-///   4: shape       : ptr                               (offset 24)
-///   5: strides     : ptr                               (offset 32)
-///   6: byte_offset : i64                               (offset 40)
-static mlir::LLVM::LLVMStructType getDLTensorType(mlir::MLIRContext *context) {
-  mlir::IntegerType i32Ty = mlir::IntegerType::get(context, 32);
-  mlir::IntegerType i64Ty = mlir::IntegerType::get(context, 64);
-  mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(context);
-  return mlir::LLVM::LLVMStructType::getLiteral(
-      context, {ptrTy, getDLDeviceType(context), i32Ty, getDLDataType(context),
-                ptrTy, ptrTy, i64Ty});
-}
+using libtriton::conversion::utils::getDLDataType;
+using libtriton::conversion::utils::getDLDeviceType;
+using libtriton::conversion::utils::getDLTensorType;
 
 struct Aux {};
 
@@ -766,7 +731,7 @@ public:
     mlir::LLVMTypeConverter typeConverter(&context);
     mlir::RewritePatternSet patterns(&context);
 
-    libtriton::torch::setupBackendTypeConversion(target, typeConverter);
+    torch::setupBackendTypeConversion(target, typeConverter);
     target.addLegalOp<mlir::func::FuncOp, mlir::func::ReturnOp>();
     populateTVMFFIToLLVMConversionPatterns(target, typeConverter, patterns);
 
@@ -784,7 +749,7 @@ struct TVMFFIToLLVMDialectInterface
   void populateConvertToLLVMConversionPatterns(
       mlir::ConversionTarget &target, mlir::LLVMTypeConverter &typeConverter,
       mlir::RewritePatternSet &patterns) const final {
-    libtriton::torch::setupBackendTypeConversion(target, typeConverter);
+    torch::setupBackendTypeConversion(target, typeConverter);
     populateTVMFFIToLLVMConversionPatterns(target, typeConverter, patterns);
   }
 };

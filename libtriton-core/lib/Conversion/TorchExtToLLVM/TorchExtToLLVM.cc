@@ -414,7 +414,7 @@ public:
     mlir::ConversionTarget target(context);
     mlir::LLVMTypeConverter typeConverter(&context);
     mlir::RewritePatternSet patterns(&context);
-    libtriton::torch::setupBackendTypeConversion(target, typeConverter);
+    torch::setupBackendTypeConversion(target, typeConverter);
 
     if (mlir::failed(mlir::applyPartialConversion(getOperation(), target,
                                                   std::move(patterns)))) {
@@ -433,7 +433,7 @@ struct TorchExtToLLVMDialectInterface
     // Setup type conversion for torch types before adding patterns, so that
     // the type converter can handle Torch tensor/bool/int/float/optional etc.
     // types when patterns query adaptor types.
-    libtriton::torch::setupBackendTypeConversion(target, typeConverter);
+    torch::setupBackendTypeConversion(target, typeConverter);
     populateTorchExtToLLVMConversionPatterns(target, typeConverter, patterns);
   }
 };

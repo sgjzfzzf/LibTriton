@@ -7,13 +7,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "libtriton-core/Conversion/Pipeline/Pipeline.h"
+#include "libtriton-core/Conversion/TorchExtToGPU/TorchExtToGPU.h"
 #include "libtriton-core/Conversion/TorchToCf/TorchToCf.h"
 #include "libtriton-core/Conversion/TorchToLLVM/FuncBackendTypeConversion.h"
 #include "libtriton-core/Conversion/TorchToLLVM/TorchToLLVM.h"
 #include "libtriton-core/Dialect/TorchExt/IR/TorchExtDialect.h"
 #include "libtriton-core/Dialect/TorchExt/Transforms/RewriteTorchAsTorchExt.h"
+#include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/ConvertToLLVM/ToLLVMPass.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
+#include "mlir/Conversion/Passes.h"
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -36,9 +39,12 @@ public:
     mlir::OpPassManager pm(mlir::ModuleOp::getOperationName());
     pm.addPass(libtriton::torch::createFuncBackendTypeConversion());
     pm.addPass(libtriton::torchext::createRewriteTorchAsTorchExt());
+    pm.addPass(libtriton::torchext::createConvertTorchExtToGPU());
     pm.addPass(libtriton::torch::createConvertTorchToLLVM());
     pm.addPass(libtriton::torch::createConvertTorchToCf());
     pm.addPass(mlir::createConvertFuncToLLVMPass());
+    pm.addPass(mlir::createArithToLLVMConversionPass());
+    pm.addPass(mlir::createGpuToLLVMConversionPass());
     pm.addPass(mlir::createConvertToLLVMPass());
     pm.addPass(mlir::createCanonicalizerPass());
     pm.addPass(mlir::createReconcileUnrealizedCastsPass());
