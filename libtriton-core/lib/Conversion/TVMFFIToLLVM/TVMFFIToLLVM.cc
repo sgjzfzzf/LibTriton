@@ -52,10 +52,6 @@ namespace libtriton::tvm_ffi {
 
 namespace {
 
-using libtriton::conversion::utils::getDLDataType;
-using libtriton::conversion::utils::getDLDeviceType;
-using libtriton::conversion::utils::getDLTensorType;
-
 struct Aux {};
 
 static mlir::LLVM::LLVMStructType getTVMFFIAnyType(mlir::MLIRContext *context) {
@@ -312,7 +308,8 @@ struct CUDADeviceGuardHandler
     mlir::MLIRContext *ctx = builder.getContext();
     mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
     mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
-    mlir::LLVM::LLVMStructType dlTensorTy = getDLTensorType(ctx);
+    mlir::LLVM::LLVMStructType dlTensorTy =
+        conversion::utils::getDLTensorType(ctx);
 
     mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
 
@@ -352,7 +349,8 @@ struct DimensionGuardHandler
     mlir::MLIRContext *ctx = builder.getContext();
     mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
     mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
-    mlir::LLVM::LLVMStructType dlTensorTy = getDLTensorType(ctx);
+    mlir::LLVM::LLVMStructType dlTensorTy =
+        conversion::utils::getDLTensorType(ctx);
 
     mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
 
@@ -378,7 +376,8 @@ struct DTypeGuardHandler : GuardHandlerBase<DTypeGuardHandler, DtypeGuardAttr> {
     mlir::Location loc = slot.getLoc();
     mlir::MLIRContext *ctx = builder.getContext();
     mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
-    mlir::LLVM::LLVMStructType dlTensorTy = getDLTensorType(ctx);
+    mlir::LLVM::LLVMStructType dlTensorTy =
+        conversion::utils::getDLTensorType(ctx);
 
     mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
 
@@ -386,7 +385,8 @@ struct DTypeGuardHandler : GuardHandlerBase<DTypeGuardHandler, DtypeGuardAttr> {
     mlir::Value dtypeGep =
         mlir::LLVM::GEPOp::create(builder, loc, ptrTy, dlTensorTy, dlTensorPtr,
                                   mlir::ArrayRef<mlir::LLVM::GEPArg>{0, 3});
-    mlir::LLVM::LLVMStructType dlDtypeTy = getDLDataType(ctx);
+    mlir::LLVM::LLVMStructType dlDtypeTy =
+        conversion::utils::getDLDataType(ctx);
     mlir::LLVM::LoadOp::create(builder, loc, dlDtypeTy, dtypeGep);
 
     // Always succeed for now (dtype comparison TBD).
@@ -405,7 +405,8 @@ struct SizeGuardHandler : GuardHandlerBase<SizeGuardHandler, SizeGuardAttr> {
     mlir::MLIRContext *ctx = builder.getContext();
     mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
     mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
-    mlir::LLVM::LLVMStructType dlTensorTy = getDLTensorType(ctx);
+    mlir::LLVM::LLVMStructType dlTensorTy =
+        conversion::utils::getDLTensorType(ctx);
 
     mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
 
@@ -438,7 +439,8 @@ struct StorageOffsetGuardHandler
     mlir::MLIRContext *ctx = builder.getContext();
     mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
     mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
-    mlir::LLVM::LLVMStructType dlTensorTy = getDLTensorType(ctx);
+    mlir::LLVM::LLVMStructType dlTensorTy =
+        conversion::utils::getDLTensorType(ctx);
 
     mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
 
@@ -466,7 +468,8 @@ struct StrideGuardHandler
     mlir::MLIRContext *ctx = builder.getContext();
     mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
     mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
-    mlir::LLVM::LLVMStructType dlTensorTy = getDLTensorType(ctx);
+    mlir::LLVM::LLVMStructType dlTensorTy =
+        conversion::utils::getDLTensorType(ctx);
 
     mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
 
@@ -624,30 +627,29 @@ public:
                                .getResult(0);
       mapping.map(arg, casted);
 
-      // ── Guard checking: if guard fails, return immediately with -1 ──
-      if (mlir::Attribute guardAttr = op.getArgAttr(i, "tvm_ffi.guard")) {
-        mlir::Value guardResult =
-            AllGuardHandlers::check(rewriter, slot, guardAttr);
-        if (!guardResult) {
-          return op.emitError("unsupported guard attribute on argument ") << i;
+      // ── Guard checking: if any guard fails, return immediately with -1 ──
+      if (mlir::ArrayAttr guardAttrs = mlir::dyn_cast<mlir::ArrayAttr>(
+              op.getArgAttr(i, "tvm_ffi.guard"))) {
+        for (mlir::Attribute g : guardAttrs) {
+          mlir::Value guardResult = AllGuardHandlers::check(rewriter, slot, g);
+          if (!guardResult) {
+            return op.emitError("unsupported guard attribute on argument ")
+                   << i;
+          }
+          mlir::Block *currentBlock = rewriter.getInsertionBlock();
+          mlir::Block *failBlock = rewriter.createBlock(&region);
+          rewriter.setInsertionPointToStart(failBlock);
+          mlir::LLVM::ConstantOp errCode =
+              mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, -1);
+          mlir::LLVM::ReturnOp::create(rewriter, loc, errCode);
+
+          mlir::Block *contBlock = rewriter.createBlock(&region);
+          rewriter.setInsertionPointToEnd(currentBlock);
+          mlir::LLVM::CondBrOp::create(rewriter, loc, guardResult, contBlock,
+                                       failBlock);
+
+          rewriter.setInsertionPointToStart(contBlock);
         }
-
-        mlir::Block *currentBlock = rewriter.getInsertionBlock();
-        // Create fail block that returns error code.
-        mlir::Block *failBlock = rewriter.createBlock(&region);
-        rewriter.setInsertionPointToStart(failBlock);
-        mlir::LLVM::ConstantOp errCode =
-            mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, -1);
-        mlir::LLVM::ReturnOp::create(rewriter, loc, errCode);
-
-        // Create continue block for subsequent operations.
-        mlir::Block *contBlock = rewriter.createBlock(&region);
-        rewriter.setInsertionPointToEnd(currentBlock);
-        mlir::LLVM::CondBrOp::create(rewriter, loc, guardResult, contBlock,
-                                     failBlock);
-
-        // Subsequent operations go into the continue block.
-        rewriter.setInsertionPointToStart(contBlock);
       }
     }
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
-from .base import Guard, Guards
-from .check import CheckGuard  # noqa: F401
+from .collection import Guards
+from .guard import Guard
 from .dimension import DimensionGuard  # noqa: F401
 from .device import CUDADeviceGuard  # noqa: F401
 from .dtype import DTypeGuard  # noqa: F401
@@ -11,13 +11,12 @@ from .size import SizeGuard  # noqa: F401
 from .storage_offset import StorageOffsetGuard  # noqa: F401
 from .stride import StrideGuard  # noqa: F401
 from .type import TensorTypeGuard  # noqa: F401
-from .uncheck import UnCheckGuard  # noqa: F401
 
 if TYPE_CHECKING:
     import torch._guards
 
 
-def parse_guard(code: str) -> Guard:
+def parse_guard(code: str) -> Optional[Guard]:
     return Guard.parse(code)
 
 

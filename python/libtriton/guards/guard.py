@@ -36,4 +36,9 @@ class Guard(object):
     def _parse(cls, code: str) -> Optional[Guard]: ...
 
     @abstractmethod
-    def to_attribute_attribute(self, context: ir.Context) -> Optional[ir.Attribute]: ...
+    def to_attribute(self, context: ir.Context) -> Optional[ir.Attribute]:
+        """Generate the MLIR guard attribute for this guard.
+
+        Returns None for guards that don't produce an attribute.
+        """
+        return None

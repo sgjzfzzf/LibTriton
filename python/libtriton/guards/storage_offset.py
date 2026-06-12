@@ -4,17 +4,18 @@ import re
 from typing import Any, Final, Optional
 from typing_extensions import override
 
-from .check import CheckGuard
+from libtriton._C.libtriton_core import ir
+
+from .guard import Guard
 
 
-class StorageOffsetGuard(CheckGuard):
+class StorageOffsetGuard(Guard):
     _regex_pattern: re.Pattern = re.compile(
-        rf"{CheckGuard._regex_variable}\.storage_offset\(\) == {CheckGuard._regex_int}"
+        rf"{Guard._regex_variable}\.storage_offset\(\) == {Guard._regex_int}"
     )
 
     def __init__(self, variable: str, expected: int, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self.variable: Final[str] = variable
+        super().__init__(variable, *args, **kwargs)
         self.expected: Final[int] = expected
 
     @override
@@ -29,3 +30,10 @@ class StorageOffsetGuard(CheckGuard):
             return StorageOffsetGuard(variable, int(expected))
         else:
             return None
+
+    @override
+    def to_attribute(self, context: ir.Context) -> Optional[ir.Attribute]:
+        return ir.Attribute.parse(
+            f"#tvm_ffi.StorageOffsetGuard<expected = {self.expected}>",
+            context=context,
+        )
