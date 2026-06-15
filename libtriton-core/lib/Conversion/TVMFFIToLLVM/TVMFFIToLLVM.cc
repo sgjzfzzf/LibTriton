@@ -628,7 +628,7 @@ public:
       mapping.map(arg, casted);
 
       // ── Guard checking: if any guard fails, return immediately with -1 ──
-      if (mlir::ArrayAttr guardAttrs = mlir::dyn_cast<mlir::ArrayAttr>(
+      if (mlir::ArrayAttr guardAttrs = mlir::dyn_cast_or_null<mlir::ArrayAttr>(
               op.getArgAttr(i, "tvm_ffi.guard"))) {
         for (mlir::Attribute g : guardAttrs) {
           mlir::Value guardResult = AllGuardHandlers::check(rewriter, slot, g);
@@ -639,6 +639,30 @@ public:
           mlir::Block *currentBlock = rewriter.getInsertionBlock();
           mlir::Block *failBlock = rewriter.createBlock(&region);
           rewriter.setInsertionPointToStart(failBlock);
+          // Set the TVM FFI error kind to GuardMatchException before
+          // returning -1, so the caller can identify the failure reason.
+          mlir::ModuleOp moduleOp =
+              op->template getParentOfType<mlir::ModuleOp>();
+          if (!moduleOp) {
+            return op.emitError("failed to get parent ModuleOp for guard "
+                                "failure error reporting");
+          }
+          mlir::FailureOr<mlir::LLVM::LLVMFuncOp> errorFn =
+              conversion::utils::getOrCreateTVMFFIErrorSetRaisedFromCStr(
+                  moduleOp);
+          if (mlir::failed(errorFn)) {
+            return op.emitError(
+                "failed to get or create TVMFFIErrorSetRaisedFromCStr");
+          }
+          mlir::Value kindPtr = conversion::utils::getOrCreateGlobalString(
+              rewriter, loc, moduleOp, "GuardMatchExceptionKind",
+              "GuardMatchException");
+          std::string errMsg =
+              llvm::formatv("argument {0} fails guard check", i);
+          mlir::Value msgPtr = conversion::utils::getOrCreateGlobalString(
+              rewriter, loc, moduleOp, "GuardMatchExceptionMsg", errMsg);
+          mlir::LLVM::CallOp::create(rewriter, loc, *errorFn,
+                                     mlir::ValueRange{kindPtr, msgPtr});
           mlir::LLVM::ConstantOp errCode =
               mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, -1);
           mlir::LLVM::ReturnOp::create(rewriter, loc, errCode);
@@ -770,7 +794,7 @@ void populateTVMFFIToLLVMConversionPatterns(
 
 void registerConvertTVMFFIToLLVMInterface(mlir::DialectRegistry &registry) {
   registry.addExtension(
-      +[](mlir::MLIRContext *ctx, libtriton::tvm_ffi::TVMFFIDialect *dialect) {
+      +[](mlir::MLIRContext *ctx, tvm_ffi::TVMFFIDialect *dialect) {
         dialect->addInterfaces<TVMFFIToLLVMDialectInterface>();
       });
 }
