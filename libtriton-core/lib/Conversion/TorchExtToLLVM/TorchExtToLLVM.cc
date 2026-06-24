@@ -170,6 +170,80 @@ struct NoneHandler : TypeHandlerBase<mlir::torch::Torch::NoneType> {
   }
 };
 
+/// Handles !torch.list<T> types. After type conversion, these are already
+/// llvm.ptr — cast to/from i64 for the type-erased StableIValue slot.
+struct ListHandler : TypeHandlerBase<mlir::torch::Torch::ListType> {
+  static mlir::FailureOr<mlir::Value> to(mlir::OpBuilder &builder,
+                                         mlir::Value input) {
+    assert(false && "ListHandler::to is not correctly implemented yet");
+    return mlir::failure();
+  }
+  static mlir::FailureOr<mlir::Value> from(mlir::OpBuilder &builder,
+                                           mlir::Value loaded) {
+    assert(false && "ListHandler::from is not correctly implemented yet");
+    return mlir::failure();
+  }
+};
+
+/// Handles !torch.Device types. After type conversion, these become
+/// llvm.struct<(i32, i32)> (device_type, device_index).
+/// Extract, pack into i64 for the type-erased StableIValue slot.
+struct DeviceHandler : TypeHandlerBase<mlir::torch::Torch::DeviceType> {
+  static mlir::FailureOr<mlir::Value> to(mlir::OpBuilder &builder,
+                                         mlir::Value input) {
+    mlir::Location loc = input.getLoc();
+    mlir::IntegerType i64Ty = mlir::IntegerType::get(builder.getContext(), 64);
+    mlir::IntegerType i32Ty = mlir::IntegerType::get(builder.getContext(), 32);
+
+    mlir::Value devType =
+        mlir::LLVM::ExtractValueOp::create(builder, loc, i32Ty, input,
+                                           llvm::ArrayRef<int64_t>{0})
+            .getResult();
+    mlir::Value devIdx =
+        mlir::LLVM::ExtractValueOp::create(builder, loc, i32Ty, input,
+                                           llvm::ArrayRef<int64_t>{1})
+            .getResult();
+
+    mlir::Value devType64 =
+        mlir::LLVM::ZExtOp::create(builder, loc, i64Ty, devType);
+    mlir::Value devIdx64 =
+        mlir::LLVM::ZExtOp::create(builder, loc, i64Ty, devIdx);
+
+    mlir::Value shift = mlir::LLVM::ConstantOp::create(
+        builder, loc, i64Ty, mlir::IntegerAttr::get(i64Ty, 32));
+    mlir::Value shifted =
+        mlir::LLVM::ShlOp::create(builder, loc, devIdx64, shift);
+    return mlir::LLVM::OrOp::create(builder, loc, devType64, shifted)
+        .getResult();
+  }
+  static mlir::FailureOr<mlir::Value> from(mlir::OpBuilder &builder,
+                                           mlir::Value loaded) {
+    mlir::Location loc = loaded.getLoc();
+    auto i64Ty = mlir::IntegerType::get(builder.getContext(), 64);
+    auto i32Ty = mlir::IntegerType::get(builder.getContext(), 32);
+
+    mlir::Value devType =
+        mlir::LLVM::TruncOp::create(builder, loc, i32Ty, loaded);
+    mlir::Value shift = mlir::LLVM::ConstantOp::create(
+        builder, loc, i64Ty, mlir::IntegerAttr::get(i64Ty, 32));
+    mlir::Value shifted =
+        mlir::LLVM::LShrOp::create(builder, loc, loaded, shift);
+    mlir::Value devIdx =
+        mlir::LLVM::TruncOp::create(builder, loc, i32Ty, shifted);
+
+    auto structTy = mlir::LLVM::LLVMStructType::getLiteral(builder.getContext(),
+                                                           {i32Ty, i32Ty});
+    mlir::Value undef = mlir::LLVM::UndefOp::create(builder, loc, structTy);
+    mlir::Value s0 =
+        mlir::LLVM::InsertValueOp::create(builder, loc, undef, devType,
+                                          llvm::ArrayRef<int64_t>{0})
+            .getResult();
+    return mlir::LLVM::InsertValueOp::create(builder, loc, s0, devIdx,
+                                             llvm::ArrayRef<int64_t>{1})
+        .getResult();
+  }
+};
+
 //===----------------------------------------------------------------------===//
 // Variadic dispatch: folds over handlers, short-circuits on first match
 //===----------------------------------------------------------------------===//
@@ -208,8 +282,9 @@ template <typename... Handlers> struct TypeDispatch {
   }
 };
 
-using AllHandlers = TypeDispatch<BaseTensorHandler, BoolHandler, IntHandler,
-                                 FloatHandler, NoneHandler>;
+using AllHandlers =
+    TypeDispatch<BaseTensorHandler, BoolHandler, IntHandler, FloatHandler,
+                 NoneHandler, ListHandler, DeviceHandler>;
 
 /// Converts torchext.call_dispatcher to an LLVM call to
 /// aoti_torch_call_dispatcher().

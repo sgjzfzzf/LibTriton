@@ -162,7 +162,34 @@ class LibTritonGraphNodeImporter(GraphNodeImporter):
         operands: List[ir.Value] = [
             call_arguments[name] for name, _ in runtime_parameters
         ]
-        (grid,) = node.kwargs["grid"]
+        raw_grid = node.kwargs["grid"]
+        # With @triton.autotune, the grid is a list of grids (one per config).
+        # Without autotune, it's a single 3-tuple.
+        if (
+            isinstance(raw_grid, (list, tuple))
+            and len(raw_grid) > 0
+            and isinstance(raw_grid[0], (list, tuple))
+        ):
+            # List of grids from autotune — pick the grid matching the best config.
+            if hasattr(function, "best_config"):
+                best_kwargs = function.best_config.all_kwargs()
+                M_val = constant_args.get("M", 0)
+                N_val = constant_args.get("N", 0)
+                block_m = best_kwargs.get("BLOCK_SIZE_M", 0)
+                block_n = best_kwargs.get("BLOCK_SIZE_N", 0)
+                if M_val and N_val and block_m and block_n:
+                    import math
+
+                    grid_x = math.ceil(int(M_val) / int(block_m)) * math.ceil(
+                        int(N_val) / int(block_n)
+                    )
+                    grid = (grid_x, 1, 1)
+                else:
+                    grid = tuple(raw_grid[0])
+            else:
+                grid = tuple(raw_grid[0])
+        else:
+            grid = tuple(raw_grid)
         binary_name: Final[str] = f"_{node.name}_{random.randint(0, 1 << 32)}"
         self._add_gpu_binary(loc, self.fx_importer.module, binary_name, kernel)
         self._emit_triton_kernel_launch(
