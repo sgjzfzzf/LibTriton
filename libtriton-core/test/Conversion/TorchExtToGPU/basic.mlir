@@ -28,11 +28,12 @@
 // CHECK:      %[[STRM_SLOT:.*]] = llvm.alloca %{{.*}} x !llvm.ptr : (i64) -> !llvm.ptr
 // CHECK:      llvm.call @aoti_torch_get_current_stream(%[[DEVICE_IDX]], %[[STRM_SLOT]]) : (i32, !llvm.ptr) -> i32
 // CHECK:      %[[ASYNC_OBJ:.*]] = llvm.load %[[STRM_SLOT]] : !llvm.ptr -> !llvm.ptr
+// CHECK:      %[[NULL_PAD:.*]] = llvm.mlir.constant(0 : i64) : i64
 // CHECK:      gpu.launch_func <%[[ASYNC_OBJ]] : !llvm.ptr> @kernel::@entry
 // CHECK:      blocks in (%[[C32]], %[[C16]], %[[C1]])
 // CHECK:      threads in (%[[C128]], %[[C1]], %[[C1]])
 // CHECK:      dynamic_shared_memory_size %[[SHMEM]]
-// CHECK:      args(%[[DATA_PTR]] : !llvm.ptr, %[[SCALAR_CAST]] : i64, {{%.*}} : i64, {{%.*}} : i64)
+// CHECK:      args(%[[DATA_PTR]] : !llvm.ptr, %[[SCALAR_CAST]] : i64, %[[NULL_PAD]] : i64, %[[NULL_PAD]] : i64)
 
 // CHECK-NOT: torchext.triton_kernel_launch
 module attributes { gpu.container_module } {

@@ -9,7 +9,7 @@ tvm_ffi.func @test() {
 // -----
 
 // CHECK: tvm_ffi.func @with_torch_int
-// CHECK: tvm_ffi.return {{%.*}} : !torch.int
+// CHECK: tvm_ffi.return %[[ARG:.*]] : !torch.int
 tvm_ffi.func @with_torch_int(%arg0: !torch.int) -> !torch.int {
   tvm_ffi.return %arg0 : !torch.int
 }

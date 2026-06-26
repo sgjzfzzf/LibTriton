@@ -17,6 +17,7 @@
 namespace libtriton::conversion::utils {
 
 LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(malloc, Malloc)
+LIBTRITON_DECLARE_CAPI_GET_OR_CREATE_NAMED(free, Free)
 
 } // namespace libtriton::conversion::utils
 

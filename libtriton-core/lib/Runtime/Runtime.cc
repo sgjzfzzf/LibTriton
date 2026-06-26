@@ -1,9 +1,9 @@
 #include "libtriton-core/Runtime/Runtime.h"
+#include "ATen/ATen.h"
 #include "dlpack/dlpack.h"
 #include "torch/csrc/inductor/aoti_torch/c/shim.h"
 #include "torch/csrc/inductor/aoti_torch/utils.h"
 
-#include <ATen/ATen.h>
 #include <cstdlib>
 
 /// AtenTensorOpaque wraps an at::Tensor for the C ABI opaque handle.
