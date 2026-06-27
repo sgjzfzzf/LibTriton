@@ -50,7 +50,7 @@ public:
     }
 
     // Allocate output array (handles zero results gracefully).
-    unsigned numResults = op->getNumResults();
+    uint32_t numResults = op->getNumResults();
     llvm::SmallVector<MlirValue> mlirResults(numResults, {nullptr});
 
     // Delegate the full lowering to SchemaLookup.

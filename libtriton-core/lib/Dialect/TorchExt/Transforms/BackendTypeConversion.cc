@@ -56,10 +56,9 @@ setupTorchOptionalToLLVMStructConversion(mlir::TypeConverter &typeConverter) {
           mlir::torch::Torch::OptionalType type) -> std::optional<mlir::Type> {
         mlir::MLIRContext *ctx = type.getContext();
         mlir::Type containedType = type.getContainedType();
-        mlir::Type convertedContained =
-            typeConverter.convertType(containedType);
         return mlir::LLVM::LLVMStructType::getLiteral(
-            ctx, {mlir::IntegerType::get(ctx, 1), convertedContained});
+            ctx, {mlir::IntegerType::get(ctx, 1),
+                  typeConverter.convertType(containedType)});
       });
   typeConverter.addTargetMaterialization(
       [](mlir::OpBuilder &builder, mlir::LLVM::LLVMStructType type,

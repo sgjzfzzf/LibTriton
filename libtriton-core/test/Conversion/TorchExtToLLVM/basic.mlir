@@ -10,8 +10,11 @@
 // Allocate slot array (max(num_operands=6, num_results=1) = 6 slots).
 // CHECK:         %[[N_SLOTS:.*]] = llvm.mlir.constant(6 : i64) : i64
 // CHECK-NEXT:    %[[SLOTS:.*]] = llvm.alloca %[[N_SLOTS]] x i64 : (i64) -> !llvm.ptr
-// Convert TVMFFIObjectHandle -> i64 via ptrtoint and store at slot[0].
-// CHECK:         %[[ARG_I64:.*]] = llvm.ptrtoint %[[ARG0]] : !llvm.ptr to i64
+// Convert TVMFFIObjectHandle -> AtenTensorHandle -> i64 via mLibTritonTVMFFIObjectToTensor, then store at slot[0].
+// CHECK:         llvm.alloca {{%.*}} x !llvm.ptr : (i64) -> !llvm.ptr
+// CHECK:         llvm.call @mLibTritonTVMFFIObjectToTensor(%[[ARG0]],
+// CHECK:         %[[ATEN_HDL:.*]] = llvm.load {{%.*}} : !llvm.ptr -> !llvm.ptr
+// CHECK:         %[[ARG_I64:.*]] = llvm.ptrtoint %[[ATEN_HDL]] : !llvm.ptr to i64
 // CHECK:         llvm.getelementptr %[[SLOTS]][0]
 // CHECK:         llvm.store %[[ARG_I64]],
 // Store zero (lowered from torch.constant.none / torch.constant.bool false)
@@ -32,10 +35,13 @@
 // CHECK:         %[[OVERLOAD:.*]] = llvm.mlir.addressof @__libtriton_constant_overload_
 // CHECK:         %[[RET:.*]] = llvm.call @aoti_torch_call_dispatcher(%[[OPNAME]], %[[OVERLOAD]], %[[SLOTS]])
 // CHECK-SAME:      : (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> i32
-// Load result from slot[0] and convert i64 -> !llvm.ptr.
+// Load result from slot[0] and convert i64 -> AtenTensorHandle -> TVMFFIObjectHandle.
 // CHECK:         %[[RES_GEP:.*]] = llvm.getelementptr %[[SLOTS]][0]
 // CHECK-NEXT:    %[[RES_VAL:.*]] = llvm.load %[[RES_GEP]] : !llvm.ptr -> i64
-// CHECK-NEXT:    %[[RES_PTR:.*]] = llvm.inttoptr %[[RES_VAL]] : i64 to !llvm.ptr
+// CHECK-NEXT:    %[[ATEN_PTR:.*]] = llvm.inttoptr %[[RES_VAL]] : i64 to !llvm.ptr
+// CHECK:         llvm.alloca {{%.*}} x !llvm.ptr : (i64) -> !llvm.ptr
+// CHECK:         llvm.call @mLibTritonTensorToTVMFFIObject(%[[ATEN_PTR]],
+// CHECK:         %[[RES_PTR:.*]] = llvm.load {{%.*}} : !llvm.ptr -> !llvm.ptr
 // CHECK-NEXT:    llvm.return %[[RES_PTR]] : !llvm.ptr
 
 module {
@@ -82,44 +88,58 @@ func.func @list_delete_list(%list: !torch.list<int>) {
 
 // -----
 
-// Test OptionalHandler: optional tensor input → always None (constant 0).
+// Test OptionalHandler: optional tensor input (bias) boxed via malloc.
+// Note: function signatures no longer use !torch.optional; the bias is
+// passed as a plain !torch.vtensor when present. The c10 schema still
+// reports OptionalType, so the Schema dispatch code boxes the value.
 // CHECK-DAG:  llvm.mlir.global internal constant @"__libtriton_constant_op_aten::linear"
 // CHECK-DAG:  llvm.mlir.global internal constant @__libtriton_constant_overload_
 // CHECK-DAG:  llvm.func @aoti_torch_call_dispatcher
 
 // CHECK-LABEL: llvm.func @aten_linear_optional(
-// CHECK-SAME:    %[[A0:.*]]: !llvm.ptr, %[[A1:.*]]: !llvm.ptr, %[[A2:.*]]: !llvm.struct<(i1, ptr)>) -> !llvm.ptr {
+// CHECK-SAME:    %[[A0:.*]]: !llvm.ptr, %[[A1:.*]]: !llvm.ptr, %[[A2:.*]]: !llvm.ptr) -> !llvm.ptr {
 // Allocate slot array (max(num_operands=3, num_results=1) = 3 slots).
 // CHECK:         %[[N_SLOTS:.*]] = llvm.mlir.constant(3 : i64) : i64
 // CHECK-NEXT:    %[[SLOTS:.*]] = llvm.alloca %[[N_SLOTS]] x i64 : (i64) -> !llvm.ptr
-// Slot 0 (arg0): tensor PtrToInt + store.
-// CHECK:         %[[A0_I64:.*]] = llvm.ptrtoint %[[A0]] : !llvm.ptr to i64
+// Slot 0 (arg0): unpack TVMFFIObjectHandle -> AtenTensorHandle via mLibTritonTVMFFIObjectToTensor, then PtrToInt + store.
+// CHECK:         llvm.alloca {{%.*}} x !llvm.ptr : (i64) -> !llvm.ptr
+// CHECK:         llvm.call @mLibTritonTVMFFIObjectToTensor(%[[A0]],
+// CHECK:         %[[A0_ATEN:.*]] = llvm.load {{%.*}} : !llvm.ptr -> !llvm.ptr
+// CHECK:         %[[A0_I64:.*]] = llvm.ptrtoint %[[A0_ATEN]] : !llvm.ptr to i64
 // CHECK:         llvm.getelementptr %[[SLOTS]][0]
 // CHECK:         llvm.store %[[A0_I64]],
-// Slot 1 (arg1): tensor PtrToInt + store.
-// CHECK:         %[[A1_I64:.*]] = llvm.ptrtoint %[[A1]] : !llvm.ptr to i64
+// Slot 1 (arg1): unpack TVMFFIObjectHandle -> AtenTensorHandle via mLibTritonTVMFFIObjectToTensor, then PtrToInt + store.
+// CHECK:         llvm.alloca {{%.*}} x !llvm.ptr : (i64) -> !llvm.ptr
+// CHECK:         llvm.call @mLibTritonTVMFFIObjectToTensor(%[[A1]],
+// CHECK:         %[[A1_ATEN:.*]] = llvm.load {{%.*}} : !llvm.ptr -> !llvm.ptr
+// CHECK:         %[[A1_I64:.*]] = llvm.ptrtoint %[[A1_ATEN]] : !llvm.ptr to i64
 // CHECK:         llvm.getelementptr %[[SLOTS]][1]
 // CHECK:         llvm.store %[[A1_I64]],
-// Slot 2 (optional none → constant 0) + store.
-// CHECK:         %[[C0:.*]] = llvm.mlir.constant(0 : i64) : i64
+// Slot 2 (bias: optional tensor input → unpack TVMFFIObjectHandle → AtenTensorHandle,
+// then box via malloc, flowing through CondBr + merge for the OptionalType encoding).
+// The cond_br terminator sits in ^bb0 (before the then/else blocks).
+// CHECK:         llvm.cond_br
+// CHECK:         llvm.alloca {{%.*}} x !llvm.ptr : (i64) -> !llvm.ptr
+// CHECK:         llvm.call @mLibTritonTVMFFIObjectToTensor(%[[A2]],
+// CHECK:         %[[A2_ATEN:.*]] = llvm.load {{%.*}} : !llvm.ptr -> !llvm.ptr
+// CHECK:         %[[A2_I64:.*]] = llvm.ptrtoint %[[A2_ATEN]] : !llvm.ptr to i64
+// CHECK-COUNT-2: llvm.br
+// CHECK:         llvm.load {{%.*}} : !llvm.ptr -> i64
 // CHECK:         llvm.getelementptr %[[SLOTS]][2]
-// CHECK:         llvm.store %[[C0]],
+// CHECK:         llvm.store {{%.*}}, {{%.*}} : i64, !llvm.ptr
 // Call dispatcher with (op_name, overload_name, slot_array).
-// CHECK:         %[[OPNAME:.*]] = llvm.mlir.addressof @"__libtriton_constant_op_aten::linear"
-// CHECK:         %[[OVERLOAD:.*]] = llvm.mlir.addressof @__libtriton_constant_overload_
-// CHECK:         llvm.call @aoti_torch_call_dispatcher(%[[OPNAME]], %[[OVERLOAD]], %[[SLOTS]])
-// CHECK-SAME:      : (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> i32
-// Load result from slot[0] and convert i64 -> !llvm.ptr.
-// CHECK:         %[[RES_GEP:.*]] = llvm.getelementptr %[[SLOTS]][0]
-// CHECK-NEXT:    %[[RES_VAL:.*]] = llvm.load %[[RES_GEP]] : !llvm.ptr -> i64
-// CHECK-NEXT:    %[[RES_PTR:.*]] = llvm.inttoptr %[[RES_VAL]] : i64 to !llvm.ptr
+// CHECK:         llvm.call @aoti_torch_call_dispatcher
+// Load result from slot[0] and convert i64 → !llvm.ptr.
+// CHECK:         %[[RES_VAL:.*]] = llvm.load {{%.*}} : !llvm.ptr -> i64
+// CHECK-NEXT:    %[[ATEN_PTR:.*]] = llvm.inttoptr %[[RES_VAL]] : i64 to !llvm.ptr
+// CHECK:         llvm.alloca {{%.*}} x !llvm.ptr : (i64) -> !llvm.ptr
+// CHECK:         llvm.call @mLibTritonTensorToTVMFFIObject(%[[ATEN_PTR]],
+// CHECK:         %[[RES_PTR:.*]] = llvm.load {{%.*}} : !llvm.ptr -> !llvm.ptr
 // CHECK-NEXT:    llvm.return %[[RES_PTR]] : !llvm.ptr
 
 module {
-func.func @aten_linear_optional(%arg0: !torch.vtensor<[2,3],f32>, %arg1: !torch.vtensor<[4,3],f32>, %arg2: !torch.optional<vtensor<[4],f32>>) -> !torch.vtensor<[2,4],f32> {
-  %0 = torch.aten.linear %arg0, %arg1, %arg2 : !torch.vtensor<[2,3],f32>, !torch.vtensor<[4,3],f32>, !torch.optional<vtensor<[4],f32>> -> !torch.vtensor<[2,4],f32>
+func.func @aten_linear_optional(%arg0: !torch.vtensor<[2,3],f32>, %arg1: !torch.vtensor<[4,3],f32>, %arg2: !torch.vtensor<[4],f32>) -> !torch.vtensor<[2,4],f32> {
+  %0 = torch.aten.linear %arg0, %arg1, %arg2 : !torch.vtensor<[2,3],f32>, !torch.vtensor<[4,3],f32>, !torch.vtensor<[4],f32> -> !torch.vtensor<[2,4],f32>
   return %0 : !torch.vtensor<[2,4],f32>
 }
 }
-
-

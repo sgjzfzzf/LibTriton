@@ -205,62 +205,25 @@ From(mlir::Type type, mlir::OpBuilder &builder, mlir::Value ptr) {
 }
 
 //===----------------------------------------------------------------------===//
-// Guard handler framework — dispatches on tvm_ffi.guard argument attributes
+// Guard checks — dispatched on tvm_ffi.guard argument attributes
 //===----------------------------------------------------------------------===//
 
-/// Base CRTP class for guard handlers. Subclasses must define:
-///   static ::mlir::Value
-///   check(::mlir::OpBuilder &builder, ::mlir::Value slot,
-///         ::mlir::Attribute attr);
-template <typename Concrete, typename GuardAttr> struct GuardHandlerBase {
-  using AttrType = GuardAttr;
-
-  static bool matches(mlir::Attribute attr) {
-    return mlir::isa<GuardAttr>(attr);
-  }
-
-  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value, AttrType) {
-    return mlir::LLVM::ConstantOp::create(
-        builder, builder.getUnknownLoc(),
-        mlir::IntegerType::get(builder.getContext(), 1), 1);
-  }
-};
-
-// ── Concrete guard handlers (placeholders — real checks TBD) ──
-
-/// Helper: load type_code from slot[0] and compare against expected value.
-static mlir::Value checkTypeCode(mlir::OpBuilder &builder, mlir::Value slot,
-                                 int32_t expectedTypeCode) {
+static mlir::Value buildGuards(mlir::OpBuilder &builder, mlir::Value slot,
+                               mlir::Attribute attr) {
   mlir::Location loc = slot.getLoc();
-  mlir::IntegerType i32Ty = mlir::IntegerType::get(builder.getContext(), 32);
-  mlir::LLVM::LLVMPointerType ptrTy =
-      mlir::LLVM::LLVMPointerType::get(builder.getContext());
-  mlir::LLVM::LLVMStructType anyTy = getTVMFFIAnyType(builder.getContext());
+  mlir::MLIRContext *ctx = builder.getContext();
 
-  mlir::Value typeCodePtr =
-      mlir::LLVM::GEPOp::create(builder, loc, ptrTy, anyTy, slot,
-                                mlir::ArrayRef<mlir::LLVM::GEPArg>{0, 0});
-  mlir::Value loadedTypeCode =
-      mlir::LLVM::LoadOp::create(builder, loc, i32Ty, typeCodePtr);
-  mlir::Value expected =
-      mlir::LLVM::ConstantOp::create(builder, loc, i32Ty, expectedTypeCode);
-  return mlir::LLVM::ICmpOp::create(builder, loc, mlir::LLVM::ICmpPredicate::eq,
-                                    loadedTypeCode, expected);
-}
+  mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
+  mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
+  mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
+  mlir::LLVM::LLVMStructType dlTensorTy =
+      conversion::utils::getDLTensorType(ctx);
+  mlir::LLVM::LLVMStructType anyTy = getTVMFFIAnyType(ctx);
 
-struct CUDADeviceGuardHandler
-    : GuardHandlerBase<CUDADeviceGuardHandler, tvm_ffi::CudaDeviceGuardAttr> {
-  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
-                           AttrType attr) {
-    int64_t deviceType = attr.getDeviceType();
-    int64_t deviceIndex = attr.getDeviceIndex();
-
-    mlir::Location loc = slot.getLoc();
-    mlir::MLIRContext *ctx = builder.getContext();
-    mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
-    mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
-    mlir::LLVM::LLVMStructType dlTensorTy =
-        conversion::utils::getDLTensorType(ctx);
+  if (CudaDeviceGuardAttr cudaGuard =
+          mlir::dyn_cast<tvm_ffi::CudaDeviceGuardAttr>(attr)) {
+    int64_t deviceType = cudaGuard.getDeviceType();
+    int64_t deviceIndex = cudaGuard.getDeviceIndex();
 
     mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
 
@@ -276,32 +239,20 @@ struct CUDADeviceGuardHandler
     mlir::Value loadedId =
         mlir::LLVM::LoadOp::create(builder, loc, i32Ty, idGep);
 
-    mlir::Value expectedType = mlir::LLVM::ConstantOp::create(
-        builder, loc, i32Ty, static_cast<int32_t>(deviceType));
+    mlir::Value expectedType =
+        mlir::LLVM::ConstantOp::create(builder, loc, i32Ty, deviceType);
     mlir::Value typeCmp = mlir::LLVM::ICmpOp::create(
         builder, loc, mlir::LLVM::ICmpPredicate::eq, loadedType, expectedType);
 
-    mlir::Value expectedId = mlir::LLVM::ConstantOp::create(
-        builder, loc, i32Ty, static_cast<int32_t>(deviceIndex));
+    mlir::Value expectedId =
+        mlir::LLVM::ConstantOp::create(builder, loc, i32Ty, deviceIndex);
     mlir::Value idCmp = mlir::LLVM::ICmpOp::create(
         builder, loc, mlir::LLVM::ICmpPredicate::eq, loadedId, expectedId);
 
     return mlir::LLVM::AndOp::create(builder, loc, typeCmp, idCmp);
-  }
-};
-
-struct DimensionGuardHandler
-    : GuardHandlerBase<DimensionGuardHandler, DimensionGuardAttr> {
-  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
-                           AttrType attr) {
-    int64_t expectedVal = attr.getExpected();
-
-    mlir::Location loc = slot.getLoc();
-    mlir::MLIRContext *ctx = builder.getContext();
-    mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
-    mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
-    mlir::LLVM::LLVMStructType dlTensorTy =
-        conversion::utils::getDLTensorType(ctx);
+  } else if (DimensionGuardAttr dimGuard =
+                 mlir::dyn_cast<DimensionGuardAttr>(attr)) {
+    int64_t expectedVal = dimGuard.getExpected();
 
     mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
 
@@ -315,24 +266,12 @@ struct DimensionGuardHandler
         mlir::LLVM::ConstantOp::create(builder, loc, i32Ty, expectedVal);
     return mlir::LLVM::ICmpOp::create(
         builder, loc, mlir::LLVM::ICmpPredicate::eq, ndimVal, expected);
-  }
-};
-
-struct DTypeGuardHandler : GuardHandlerBase<DTypeGuardHandler, DtypeGuardAttr> {
-  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
-                           AttrType) {
+  } else if (mlir::isa<DtypeGuardAttr>(attr)) {
     // TODO: The DtypeGuardAttr has no parameters yet. Once dtype fields
     // (code/bits/lanes) are added, compare DLDataType from DLTensor field 3.
     // For now, read the DLDataType struct as a placeholder.
-    mlir::Location loc = slot.getLoc();
-    mlir::MLIRContext *ctx = builder.getContext();
-    mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
-    mlir::LLVM::LLVMStructType dlTensorTy =
-        conversion::utils::getDLTensorType(ctx);
-
     mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
 
-    // Load DLDataType from DLTensor field 3 (code, bits, lanes).
     mlir::Value dtypeGep =
         mlir::LLVM::GEPOp::create(builder, loc, ptrTy, dlTensorTy, dlTensorPtr,
                                   mlir::ArrayRef<mlir::LLVM::GEPArg>{0, 3});
@@ -340,24 +279,11 @@ struct DTypeGuardHandler : GuardHandlerBase<DTypeGuardHandler, DtypeGuardAttr> {
         conversion::utils::getDLDataType(ctx);
     mlir::LLVM::LoadOp::create(builder, loc, dlDtypeTy, dtypeGep);
 
-    // Always succeed for now (dtype comparison TBD).
-    return mlir::LLVM::ConstantOp::create(
-        builder, loc, mlir::IntegerType::get(builder.getContext(), 1), 1);
-  }
-};
-
-struct SizeGuardHandler : GuardHandlerBase<SizeGuardHandler, SizeGuardAttr> {
-  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
-                           AttrType attr) {
-    int64_t index = attr.getIndex();
-    int64_t expectedVal = attr.getExpected();
-
-    mlir::Location loc = slot.getLoc();
-    mlir::MLIRContext *ctx = builder.getContext();
-    mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
-    mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
-    mlir::LLVM::LLVMStructType dlTensorTy =
-        conversion::utils::getDLTensorType(ctx);
+    return mlir::LLVM::ConstantOp::create(builder, loc,
+                                          mlir::IntegerType::get(ctx, 1), 1);
+  } else if (SizeGuardAttr sizeGuard = mlir::dyn_cast<SizeGuardAttr>(attr)) {
+    int64_t index = sizeGuard.getIndex();
+    int64_t expectedVal = sizeGuard.getExpected();
 
     mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
 
@@ -367,9 +293,9 @@ struct SizeGuardHandler : GuardHandlerBase<SizeGuardHandler, SizeGuardAttr> {
     mlir::Value shapePtr =
         mlir::LLVM::LoadOp::create(builder, loc, ptrTy, shapePtrGep);
 
-    mlir::Value elemGep = mlir::LLVM::GEPOp::create(
-        builder, loc, ptrTy, i64Ty, shapePtr,
-        mlir::ArrayRef<mlir::LLVM::GEPArg>{static_cast<int32_t>(index)});
+    mlir::Value elemGep =
+        mlir::LLVM::GEPOp::create(builder, loc, ptrTy, i64Ty, shapePtr,
+                                  mlir::ArrayRef<mlir::LLVM::GEPArg>{index});
     mlir::Value elemVal =
         mlir::LLVM::LoadOp::create(builder, loc, i64Ty, elemGep);
 
@@ -377,21 +303,9 @@ struct SizeGuardHandler : GuardHandlerBase<SizeGuardHandler, SizeGuardAttr> {
         mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, expectedVal);
     return mlir::LLVM::ICmpOp::create(
         builder, loc, mlir::LLVM::ICmpPredicate::eq, elemVal, expected);
-  }
-};
-
-struct StorageOffsetGuardHandler
-    : GuardHandlerBase<StorageOffsetGuardHandler, StorageOffsetGuardAttr> {
-  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
-                           AttrType attr) {
-    int64_t expectedVal = attr.getExpected();
-
-    mlir::Location loc = slot.getLoc();
-    mlir::MLIRContext *ctx = builder.getContext();
-    mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
-    mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
-    mlir::LLVM::LLVMStructType dlTensorTy =
-        conversion::utils::getDLTensorType(ctx);
+  } else if (StorageOffsetGuardAttr offsetGuard =
+                 mlir::dyn_cast<StorageOffsetGuardAttr>(attr)) {
+    int64_t expectedVal = offsetGuard.getExpected();
 
     mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
 
@@ -405,22 +319,10 @@ struct StorageOffsetGuardHandler
         mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, expectedVal);
     return mlir::LLVM::ICmpOp::create(
         builder, loc, mlir::LLVM::ICmpPredicate::eq, offsetVal, expected);
-  }
-};
-
-struct StrideGuardHandler
-    : GuardHandlerBase<StrideGuardHandler, StrideGuardAttr> {
-  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
-                           AttrType attr) {
-    int64_t index = attr.getIndex();
-    int64_t expectedVal = attr.getExpected();
-
-    mlir::Location loc = slot.getLoc();
-    mlir::MLIRContext *ctx = builder.getContext();
-    mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
-    mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
-    mlir::LLVM::LLVMStructType dlTensorTy =
-        conversion::utils::getDLTensorType(ctx);
+  } else if (StrideGuardAttr strideGuard =
+                 mlir::dyn_cast<StrideGuardAttr>(attr)) {
+    int64_t index = strideGuard.getIndex();
+    int64_t expectedVal = strideGuard.getExpected();
 
     mlir::Value dlTensorPtr = getDLTensorPtr(builder, slot);
 
@@ -430,9 +332,9 @@ struct StrideGuardHandler
     mlir::Value stridePtr =
         mlir::LLVM::LoadOp::create(builder, loc, ptrTy, stridePtrGep);
 
-    mlir::Value elemGep = mlir::LLVM::GEPOp::create(
-        builder, loc, ptrTy, i64Ty, stridePtr,
-        mlir::ArrayRef<mlir::LLVM::GEPArg>{static_cast<int32_t>(index)});
+    mlir::Value elemGep =
+        mlir::LLVM::GEPOp::create(builder, loc, ptrTy, i64Ty, stridePtr,
+                                  mlir::ArrayRef<mlir::LLVM::GEPArg>{index});
     mlir::Value elemVal =
         mlir::LLVM::LoadOp::create(builder, loc, i64Ty, elemGep);
 
@@ -440,39 +342,19 @@ struct StrideGuardHandler
         mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, expectedVal);
     return mlir::LLVM::ICmpOp::create(
         builder, loc, mlir::LLVM::ICmpPredicate::eq, elemVal, expected);
+  } else if (mlir::isa<TensorTypeGuardAttr>(attr)) {
+    mlir::Value typeCodePtr =
+        mlir::LLVM::GEPOp::create(builder, loc, ptrTy, anyTy, slot,
+                                  mlir::ArrayRef<mlir::LLVM::GEPArg>{0, 0});
+    mlir::Value loadedTypeCode =
+        mlir::LLVM::LoadOp::create(builder, loc, i32Ty, typeCodePtr);
+    mlir::Value expected =
+        mlir::LLVM::ConstantOp::create(builder, loc, i32Ty, kTVMFFITensor);
+    return mlir::LLVM::ICmpOp::create(
+        builder, loc, mlir::LLVM::ICmpPredicate::eq, loadedTypeCode, expected);
   }
-};
-
-struct TensorTypeGuardHandler
-    : GuardHandlerBase<TensorTypeGuardHandler, TensorTypeGuardAttr> {
-  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
-                           AttrType) {
-    return checkTypeCode(builder, slot, kTVMFFITensor);
-  }
-};
-
-/// Fold-expression dispatch over variadic handler types.
-template <typename... Handlers> struct GuardDispatch {
-  static mlir::Value check(mlir::OpBuilder &builder, mlir::Value slot,
-                           mlir::Attribute attr) {
-    mlir::Value result;
-    // Try each handler; the first one that matches wins.
-    (void)((Handlers::matches(attr)
-                ? (result = Handlers::check(
-                       builder, slot,
-                       mlir::cast<typename Handlers::AttrType>(attr)),
-                   true)
-                : false) ||
-           ...);
-    return result;
-  }
-};
-
-using AllGuardHandlers =
-    GuardDispatch<CUDADeviceGuardHandler, DimensionGuardHandler,
-                  DTypeGuardHandler, SizeGuardHandler,
-                  StorageOffsetGuardHandler, StrideGuardHandler,
-                  TensorTypeGuardHandler>;
+  return {};
+}
 
 /// Converts tvm_ffi.func to func.func by converting the function type
 /// signature through the type converter and inlining the region body.
@@ -537,7 +419,7 @@ public:
       if (mlir::ArrayAttr guardAttrs = mlir::dyn_cast_or_null<mlir::ArrayAttr>(
               op.getArgAttr(i, "tvm_ffi.guard"))) {
         for (mlir::Attribute g : guardAttrs) {
-          mlir::Value guardResult = AllGuardHandlers::check(rewriter, slot, g);
+          mlir::Value guardResult = buildGuards(rewriter, slot, g);
           if (!guardResult) {
             return op.emitError("unsupported guard attribute on argument ")
                    << i;
@@ -621,7 +503,7 @@ public:
             // (!llvm.ptr). We need to wrap it into a TVMFFIAny struct before
             // storing to retPtr.
             if (mlir::isa<mlir::torch::Torch::BaseTensorType>(operandTy)) {
-              mlir::Value handle = result.value();
+              mlir::Value handle = *result;
               mlir::Value wrapped =
                   mlir::LLVM::UndefOp::create(rewriter, loc, anyTy);
               mlir::Value typeIdx = mlir::LLVM::ConstantOp::create(
@@ -636,8 +518,7 @@ public:
               mlir::LLVM::StoreOp::create(rewriter, loc, wrapped, retPtr);
             } else {
               // POD handlers return a full TVMFFIAny struct; store directly.
-              mlir::LLVM::StoreOp::create(rewriter, loc, result.value(),
-                                          retPtr);
+              mlir::LLVM::StoreOp::create(rewriter, loc, *result, retPtr);
             }
           }
           mlir::LLVM::ConstantOp cnst =

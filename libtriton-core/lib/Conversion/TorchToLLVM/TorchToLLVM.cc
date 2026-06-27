@@ -8,6 +8,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "torch-mlir/Dialect/Torch/IR/TorchOps.h"
+#include "torch/csrc/stable/c/shim.h"
 
 namespace libtriton::torch {
 
@@ -88,8 +89,10 @@ public:
   }
 };
 
-/// Lowers torch.constant.device to LLVM::UndefOp (the device value is not
-/// needed at runtime — earlier passes already handled device placement).
+/// Lowers torch.constant.device to LLVM struct {i32 device_type, i32
+/// device_index}.  The device value *must* be preserved because downstream
+/// ops (e.g. torch.aten.empty.memory_format) rely on it to allocate output
+/// tensors on the correct device.
 class ConvertTorchConstantDeviceOp
     : public mlir::OpConversionPattern<mlir::torch::Torch::ConstantDeviceOp> {
 public:
@@ -99,8 +102,35 @@ public:
   mlir::LogicalResult
   matchAndRewrite(mlir::torch::Torch::ConstantDeviceOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const override {
-    mlir::Type ty = getTypeConverter()->convertType(op.getType());
-    rewriter.replaceOpWithNewOp<mlir::LLVM::UndefOp>(op, ty);
+    mlir::MLIRContext *ctx = rewriter.getContext();
+    mlir::Location loc = op.getLoc();
+    mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
+
+    // The result type is {i32 device_type, i32 device_index}.
+    mlir::LLVM::LLVMStructType structTy =
+        mlir::cast<mlir::LLVM::LLVMStructType>(
+            getTypeConverter()->convertType(op.getType()));
+
+    // Parse the device string (e.g. "cuda:0", "cpu") using PyTorch's
+    // stable C API.  This correctly handles all device types and returns
+    // AOTI-compatible values (matching aoti_torch_device_type_*()).
+    llvm::StringRef dev = op.getValue();
+    uint32_t deviceType = 0;
+    int32_t deviceIndex = 0;
+    if (torch_parse_device_string(dev.data(), &deviceType, &deviceIndex)) {
+      return op.emitError("failed to parse device string: ") << dev;
+    }
+
+    // Build the struct: undef → insert device_type → insert device_index.
+    mlir::Value result = mlir::LLVM::UndefOp::create(rewriter, loc, structTy);
+    mlir::Value typeVal =
+        mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, deviceType);
+    result = mlir::LLVM::InsertValueOp::create(
+        rewriter, loc, structTy, result, typeVal, llvm::ArrayRef<int64_t>{0});
+    mlir::Value idxVal =
+        mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, deviceIndex);
+    rewriter.replaceOpWithNewOp<mlir::LLVM::InsertValueOp>(
+        op, structTy, result, idxVal, llvm::ArrayRef<int64_t>{1});
     return mlir::success();
   }
 };

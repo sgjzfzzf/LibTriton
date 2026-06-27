@@ -23,24 +23,11 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Value.h"
+#include "torch-mlir/Dialect/Torch/IR/TorchTypes.h"
 
 #include <regex>
 
 namespace {
-
-//===----------------------------------------------------------------------===//
-// c10 Dispatcher initialization guard
-//===----------------------------------------------------------------------===//
-
-/// Ensures c10::Dispatcher has been initialized (primarily to guarantee that
-/// the registered operator table is populated before schema lookups).
-void ensureC10Registered() {
-  static bool registered = false;
-  if (!registered) {
-    c10::Dispatcher::singleton();
-    registered = true;
-  }
-}
 
 //===----------------------------------------------------------------------===//
 // StableIValue building from c10 type info
@@ -51,25 +38,46 @@ void ensureC10Registered() {
 ///
 /// \param builder  The MLIR op builder.
 /// \param c10Type  The c10 type from the op schema argument.
+/// \param torchType The original torch MLIR type of the operand, before LLVM
+///                  lowering (e.g. !torch.none, !torch.int).
 /// \param input    The adapted LLVM-typed MLIR value.
 /// \param moduleOp The parent MLIR module.
 /// \param loc      The source location.
 /// \return The i64 StableIValue on success, or failure.
-mlir::FailureOr<mlir::Value> buildStableIValue(mlir::OpBuilder &builder,
-                                               const c10::TypePtr &c10Type,
-                                               mlir::Value input,
-                                               mlir::ModuleOp moduleOp,
-                                               mlir::Location loc) {
+mlir::FailureOr<mlir::Value>
+buildStableIValue(mlir::OpBuilder &builder, const c10::TypePtr &c10Type,
+                  mlir::Type torchType, mlir::Value input,
+                  mlir::ModuleOp moduleOp, mlir::Location loc) {
   mlir::MLIRContext *ctx = builder.getContext();
   mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
 
   switch (c10Type->kind()) {
   case c10::TypeKind::TensorType: {
     // Tensor: adapted value is a TVMFFIObjectHandle (!llvm.ptr).
-    // Convert pointer to i64 directly for the type-erased StableIValue slot.
-    // The runtime already uses a handle representation, so PtrToInt is
-    // sufficient to pass the handle through the dispatcher slot.
-    return mlir::LLVM::PtrToIntOp::create(builder, loc, i64Ty, input)
+    // aoti_torch_call_dispatcher expects an AtenTensorHandle in the
+    // StableIValue slot, so we must unpack the AtenTensorHandle from
+    // the TVMFFIObjectHandle first.
+    mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
+
+    mlir::FailureOr<mlir::LLVM::LLVMFuncOp> unpackFn =
+        libtriton::conversion::utils::getOrCreateTVMFFIObjectToTensor(moduleOp);
+    if (mlir::failed(unpackFn)) {
+      return mlir::failure();
+    }
+
+    // Allocate stack slot for AtenTensorHandle output.
+    mlir::Value slot = mlir::LLVM::AllocaOp::create(
+        builder, loc, ptrTy, ptrTy,
+        mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, 1));
+
+    // Call mLibTritonTVMFFIObjectToTensor(handle, &slot).
+    mlir::LLVM::CallOp::create(builder, loc, *unpackFn,
+                               mlir::ValueRange{input, slot});
+
+    // Load the AtenTensorHandle and convert to i64 for the dispatcher.
+    mlir::Value atenHandle =
+        mlir::LLVM::LoadOp::create(builder, loc, ptrTy, slot);
+    return mlir::LLVM::PtrToIntOp::create(builder, loc, i64Ty, atenHandle)
         .getResult();
   }
   case c10::TypeKind::BoolType: {
@@ -92,31 +100,124 @@ mlir::FailureOr<mlir::Value> buildStableIValue(mlir::OpBuilder &builder,
     return mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, 0).getResult();
   }
   case c10::TypeKind::OptionalType: {
-    // Optional: treat as None → constant 0 for now.
-    // TODO: handle non-None optional values based on adapted type.
-    return mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, 0).getResult();
+    // Optional: unified CondBr + blocks lowering for all three sub-cases.
+    // - torch.none               → flag = constant 0 (always zero branch)
+    // - torch.optional<T>        → flag = extractvalue struct[0]
+    // - direct type (e.g. int)   → flag = constant 1 (always malloc branch)
+    // Dead branches contain dummy operations; MLIR canonicalization removes
+    // them later.
+
+    c10::TypePtr innerC10Type =
+        c10Type->cast<c10::OptionalType>()->getElementType();
+
+    // Determine the branch condition and inner value metadata.
+    mlir::IntegerType i1Ty = mlir::IntegerType::get(ctx, 1);
+    mlir::Value flag;
+    mlir::Value innerAdapted;
+    mlir::Type innerOrigType;
+    const bool isNoneType = llvm::isa<mlir::torch::Torch::NoneType>(torchType);
+
+    if (isNoneType) {
+      // Always None: flag = 0 (then-block is dead).
+      flag = mlir::LLVM::ConstantOp::create(builder, loc, i1Ty, 0);
+    } else if (mlir::torch::Torch::OptionalType optTy =
+                   llvm::dyn_cast<mlir::torch::Torch::OptionalType>(
+                       torchType)) {
+      // Optional wrapper: flag is field 0 of llvm.struct<(i1, T)>.
+      mlir::LLVM::LLVMStructType structTy =
+          llvm::cast<mlir::LLVM::LLVMStructType>(input.getType());
+      llvm::ArrayRef<mlir::Type> structBody = structTy.getBody();
+      flag = mlir::LLVM::ExtractValueOp::create(
+                 builder, loc, structBody[0], input, llvm::ArrayRef<int64_t>{0})
+                 .getResult();
+      innerAdapted =
+          mlir::LLVM::ExtractValueOp::create(builder, loc, structBody[1], input,
+                                             llvm::ArrayRef<int64_t>{1})
+              .getResult();
+      innerOrigType = optTy.getContainedType();
+    } else {
+      // Direct type: flag = 1 (else-block is dead).
+      flag = mlir::LLVM::ConstantOp::create(builder, loc, i1Ty, 1);
+      innerAdapted = input;
+      innerOrigType = torchType;
+    }
+
+    // Allocate a stack slot for the result (must dominate both branches).
+    mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
+    mlir::Value resultSlot = mlir::LLVM::AllocaOp::create(
+        builder, loc, ptrTy, i64Ty,
+        mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, 1));
+
+    // Split the current block; the continuation serves as the merge target.
+    mlir::Block *origBlock = builder.getBlock();
+    mlir::Block *continuationBlock =
+        origBlock->splitBlock(builder.getInsertionPoint());
+
+    mlir::Block *thenBlock = builder.createBlock(continuationBlock);
+    mlir::Block *elseBlock = builder.createBlock(continuationBlock);
+
+    // Terminate origBlock with cond_br.
+    builder.setInsertionPointToEnd(origBlock);
+    mlir::LLVM::CondBrOp::create(builder, loc, flag, thenBlock, elseBlock);
+
+    // --- Then block: box inner StableIValue on the heap ---
+    builder.setInsertionPointToStart(thenBlock);
+    mlir::Value innerIVal;
+    if (isNoneType) {
+      // Dead branch: emit a dummy constant (simplified away later).
+      innerIVal = mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, 0);
+    } else {
+      mlir::FailureOr<mlir::Value> converted = buildStableIValue(
+          builder, innerC10Type, innerOrigType, innerAdapted, moduleOp, loc);
+      if (mlir::failed(converted)) {
+        return mlir::failure();
+      }
+      innerIVal = *converted;
+    }
+
+    mlir::FailureOr<mlir::LLVM::LLVMFuncOp> mallocFn =
+        libtriton::conversion::utils::getOrCreateMalloc(moduleOp);
+    if (mlir::failed(mallocFn)) {
+      return mlir::failure();
+    }
+    mlir::Value size = mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, 8);
+    mlir::Value ptr =
+        mlir::LLVM::CallOp::create(builder, loc, *mallocFn, size).getResult();
+    mlir::LLVM::StoreOp::create(builder, loc, innerIVal, ptr);
+    mlir::Value thenVal =
+        mlir::LLVM::PtrToIntOp::create(builder, loc, i64Ty, ptr);
+    mlir::LLVM::StoreOp::create(builder, loc, thenVal, resultSlot);
+    mlir::LLVM::BrOp::create(builder, loc, continuationBlock);
+
+    // --- Else block: zero (None sentinel) ---
+    builder.setInsertionPointToStart(elseBlock);
+    mlir::Value zero = mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, 0);
+    mlir::LLVM::StoreOp::create(builder, loc, zero, resultSlot);
+    mlir::LLVM::BrOp::create(builder, loc, continuationBlock);
+
+    // --- Continuation block (merge point) ---
+    builder.setInsertionPointToStart(continuationBlock);
+    return mlir::LLVM::LoadOp::create(builder, loc, i64Ty, resultSlot)
+        .getResult();
   }
   case c10::TypeKind::DeviceObjType: {
     // Device: adapted type is llvm.struct<(i32, i32)>.
     // Pack device_type and device_index into a single i64.
+    // PyTorch StableIValue format: (device_type << 32) | device_index
+    // Upper 32 bits = device_type, lower 32 bits = device_index.
     mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
-    mlir::Value devType =
-        mlir::LLVM::ExtractValueOp::create(builder, loc, i32Ty, input,
-                                           llvm::ArrayRef<int64_t>{0})
-            .getResult();
-    mlir::Value devIdx =
-        mlir::LLVM::ExtractValueOp::create(builder, loc, i32Ty, input,
-                                           llvm::ArrayRef<int64_t>{1})
-            .getResult();
+    mlir::Value devType = mlir::LLVM::ExtractValueOp::create(
+        builder, loc, i32Ty, input, llvm::ArrayRef<int64_t>{0});
+    mlir::Value devIdx = mlir::LLVM::ExtractValueOp::create(
+        builder, loc, i32Ty, input, llvm::ArrayRef<int64_t>{1});
     mlir::Value devType64 =
         mlir::LLVM::ZExtOp::create(builder, loc, i64Ty, devType);
     mlir::Value devIdx64 =
         mlir::LLVM::ZExtOp::create(builder, loc, i64Ty, devIdx);
-    mlir::Value shift = mlir::LLVM::ConstantOp::create(
-        builder, loc, i64Ty, mlir::IntegerAttr::get(i64Ty, 32));
+    mlir::Value shift = mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, 32);
     mlir::Value shifted =
-        mlir::LLVM::ShlOp::create(builder, loc, devIdx64, shift);
-    return mlir::LLVM::OrOp::create(builder, loc, devType64, shifted)
+        mlir::LLVM::ShlOp::create(builder, loc, devType64, shift);
+    return mlir::LLVM::OrOp::create(builder, loc, shifted, devIdx64)
         .getResult();
   }
   case c10::TypeKind::ListType:
@@ -137,25 +238,47 @@ mlir::FailureOr<mlir::Value> buildStableIValue(mlir::OpBuilder &builder,
 ///
 /// \param builder  The MLIR op builder.
 /// \param c10Type  The c10 type from the op schema result.
+/// \param torchType The original torch MLIR type of the result (unused for
+///                  non-optional types; passed for symmetry).
 /// \param loaded   The i64 StableIValue loaded from the dispatcher stack.
 /// \param moduleOp The parent MLIR module.
 /// \param loc      The source location.
 /// \return The adapted LLVM-typed MLIR value on success, or failure.
-mlir::FailureOr<mlir::Value> resolveStableIValue(mlir::OpBuilder &builder,
-                                                 const c10::TypePtr &c10Type,
-                                                 mlir::Value loaded,
-                                                 mlir::ModuleOp moduleOp,
-                                                 mlir::Location loc) {
+mlir::FailureOr<mlir::Value>
+resolveStableIValue(mlir::OpBuilder &builder, const c10::TypePtr &c10Type,
+                    mlir::Type torchType, mlir::Value loaded,
+                    mlir::ModuleOp moduleOp, mlir::Location loc) {
   mlir::MLIRContext *ctx = builder.getContext();
   mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
+  mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
 
   switch (c10Type->kind()) {
   case c10::TypeKind::TensorType: {
-    // Tensor: i64 → !llvm.ptr (TVMFFIObjectHandle).
-    // Reverse of PtrToInt above.
-    return mlir::LLVM::IntToPtrOp::create(
-               builder, loc, mlir::LLVM::LLVMPointerType::get(ctx), loaded)
-        .getResult();
+    // Tensor: i64 → AtenTensorHandle → TVMFFIObjectHandle.
+    // The dispatcher returns an AtenTensorHandle in the StableIValue slot;
+    // we must pack it back into a TVMFFIObjectHandle for the LLVM pipeline.
+
+    // Convert i64 back to AtenTensorHandle pointer.
+    mlir::Value atenHandle =
+        mlir::LLVM::IntToPtrOp::create(builder, loc, ptrTy, loaded);
+
+    mlir::FailureOr<mlir::LLVM::LLVMFuncOp> packFn =
+        libtriton::conversion::utils::getOrCreateTensorToTVMFFIObject(moduleOp);
+    if (mlir::failed(packFn)) {
+      return mlir::failure();
+    }
+
+    // Allocate stack slot for TVMFFIObjectHandle output.
+    mlir::Value outSlot = mlir::LLVM::AllocaOp::create(
+        builder, loc, ptrTy, ptrTy,
+        mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, 1));
+
+    // Call mLibTritonTensorToTVMFFIObject(atenHandle, &outSlot).
+    mlir::LLVM::CallOp::create(builder, loc, *packFn,
+                               mlir::ValueRange{atenHandle, outSlot});
+
+    // Load and return the TVMFFIObjectHandle.
+    return mlir::LLVM::LoadOp::create(builder, loc, ptrTy, outSlot).getResult();
   }
   case c10::TypeKind::BoolType: {
     // Bool: trunc i64 to i1.
@@ -180,22 +303,25 @@ mlir::FailureOr<mlir::Value> resolveStableIValue(mlir::OpBuilder &builder,
     return mlir::Value();
   }
   case c10::TypeKind::OptionalType: {
-    // Optional result: pass-through the loaded i64 as-is.
-    return loaded;
+    // TODO: support Optional result type unpacking with CondBr blocks,
+    // matching the boxed encoding produced by buildStableIValue.
+    return mlir::failure();
   }
   case c10::TypeKind::DeviceObjType: {
     // Device: unpack i64 → llvm.struct<(i32, i32)>.
+    // PyTorch StableIValue format: (device_type << 32) | device_index
+    // Lower 32 bits = device_index, upper 32 bits = device_type.
     mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
-    mlir::Value devType =
+    mlir::Value devIdx =
         mlir::LLVM::TruncOp::create(builder, loc, i32Ty, loaded);
-    mlir::Value shift = mlir::LLVM::ConstantOp::create(
-        builder, loc, i64Ty, mlir::IntegerAttr::get(i64Ty, 32));
+    mlir::Value shift = mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, 32);
     mlir::Value shifted =
         mlir::LLVM::LShrOp::create(builder, loc, loaded, shift);
-    mlir::Value devIdx =
+    mlir::Value devType =
         mlir::LLVM::TruncOp::create(builder, loc, i32Ty, shifted);
 
-    auto structTy = mlir::LLVM::LLVMStructType::getLiteral(ctx, {i32Ty, i32Ty});
+    mlir::LLVM::LLVMStructType structTy =
+        mlir::LLVM::LLVMStructType::getLiteral(ctx, {i32Ty, i32Ty});
     mlir::Value undef = mlir::LLVM::UndefOp::create(builder, loc, structTy);
     mlir::Value s0 =
         mlir::LLVM::InsertValueOp::create(builder, loc, undef, devType,
@@ -208,8 +334,7 @@ mlir::FailureOr<mlir::Value> resolveStableIValue(mlir::OpBuilder &builder,
   case c10::TypeKind::ListType:
   case c10::TypeKind::AnyListType: {
     // List: i64 → !llvm.ptr (StableListHandle*).
-    return mlir::LLVM::IntToPtrOp::create(
-               builder, loc, mlir::LLVM::LLVMPointerType::get(ctx), loaded)
+    return mlir::LLVM::IntToPtrOp::create(builder, loc, ptrTy, loaded)
         .getResult();
   }
   default:
@@ -249,7 +374,8 @@ int mLibTritonSchemaDispatchTorchAtenOp(
 
   // Look up the operator schema via c10::Dispatcher.
   c10::OperatorName c10OpName(dispatcherOpName, dispatcherOverloadName);
-  auto opHandle = c10::Dispatcher::singleton().findSchema(c10OpName);
+  std::optional<at::OperatorHandle> opHandle =
+      c10::Dispatcher::singleton().findSchema(c10OpName);
   if (!opHandle.has_value()) {
     mlirOp->emitError() << "operator " << dispatcherOpName << "."
                         << dispatcherOverloadName
@@ -257,9 +383,9 @@ int mLibTritonSchemaDispatchTorchAtenOp(
     return 1;
   }
 
-  const auto &schema = opHandle->schema();
-  const auto &schemaArgs = schema.arguments();
-  const auto &schemaReturns = schema.returns();
+  const at::FunctionSchema &schema = opHandle->schema();
+  const std::vector<at::Argument> &schemaArgs = schema.arguments();
+  const std::vector<at::Argument> &schemaReturns = schema.returns();
 
   // Find the parent module.
   mlir::ModuleOp moduleOp = mlirOp->getParentOfType<mlir::ModuleOp>();
@@ -277,28 +403,25 @@ int mLibTritonSchemaDispatchTorchAtenOp(
   mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
   mlir::Value array = mlir::LLVM::AllocaOp::create(
       mlirRewriter, loc, ptrTy, i64Ty,
-      mlir::LLVM::ConstantOp::create(mlirRewriter, loc,
-                                     mlir::IntegerType::get(ctx, 64), maxCount)
+      mlir::LLVM::ConstantOp::create(mlirRewriter, loc, i64Ty, maxCount)
           .getResult());
 
   // Convert and store each operand into the slot array.
   for (size_t i = 0; i < numInputs; ++i) {
     mlir::Value adaptedVal = unwrap(operands[i]);
 
-    // Determine the c10 type for this argument.
-    c10::TypePtr argType =
-        (i < schemaArgs.size()) ? schemaArgs[i].type() : nullptr;
-
     mlir::Value ival;
-    if (argType) {
-      auto built =
-          buildStableIValue(mlirRewriter, argType, adaptedVal, moduleOp, loc);
+    if (i < schemaArgs.size()) {
+      c10::TypePtr argType = schemaArgs[i].type();
+      mlir::Type torchType = mlirOp->getOperand(i).getType();
+      mlir::FailureOr<mlir::Value> built = buildStableIValue(
+          mlirRewriter, argType, torchType, adaptedVal, moduleOp, loc);
       if (mlir::failed(built)) {
         mlirOp->emitError("unsupported input type: ")
             << c10::typeKindToString(argType->kind());
         return 1;
       }
-      ival = built.value();
+      ival = *built;
     } else {
       // No schema type info: pass the adapted value as-is (assume i64).
       ival = adaptedVal;
@@ -336,19 +459,18 @@ int mLibTritonSchemaDispatchTorchAtenOp(
     mlir::Value loaded =
         mlir::LLVM::LoadOp::create(mlirRewriter, loc, i64Ty, ptr);
 
-    c10::TypePtr retType =
-        (i < schemaReturns.size()) ? schemaReturns[i].type() : nullptr;
-
     mlir::Value result;
-    if (retType) {
-      auto resolved =
-          resolveStableIValue(mlirRewriter, retType, loaded, moduleOp, loc);
+    if (i < schemaReturns.size()) {
+      c10::TypePtr retType = schemaReturns[i].type();
+      mlir::Type torchResultType = mlirOp->getResult(i).getType();
+      mlir::FailureOr<mlir::Value> resolved = resolveStableIValue(
+          mlirRewriter, retType, torchResultType, loaded, moduleOp, loc);
       if (mlir::failed(resolved)) {
         mlirOp->emitError("unsupported result type: ")
             << c10::typeKindToString(retType->kind());
         return 1;
       }
-      result = resolved.value();
+      result = *resolved;
     } else {
       result = loaded;
     }

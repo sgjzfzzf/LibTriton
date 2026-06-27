@@ -98,7 +98,7 @@ mlir::LogicalResult FuncOp::verify() {
   }
 
   if (std::optional<llvm::StringRef> visibility = getSymVisibility();
-      visibility && visibility.value() != "public") {
+      visibility && *visibility != "public") {
     return emitOpError("must have public visibility");
   }
 
