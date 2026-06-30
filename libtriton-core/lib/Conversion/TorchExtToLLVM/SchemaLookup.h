@@ -26,9 +26,9 @@ extern "C" {
 /// \param results  Output array for type-erased (StableIValue) results.
 /// \param rewriter The MLIR conversion pattern rewriter.
 /// \return 0 on success, nonzero on failure.
-int mLibTritonSchemaDispatchTorchAtenOp(MlirOperation op, MlirValue *operands,
-                                        MlirValue *results,
-                                        MlirConversionPatternRewriter rewriter);
+int LibTritonSchemaDispatchTorchAtenOp(MlirOperation op, MlirValue *operands,
+                                       MlirValue *results,
+                                       MlirConversionPatternRewriter rewriter);
 
 #ifdef __cplusplus
 }

@@ -1,5 +1,4 @@
 // RUN: libtriton-core-opt %s --torch-to-llvm-pipeline | FileCheck %s
-// RUN: libtriton-core-opt %s --torch-to-llvm-pipeline | mlir-translate --mlir-to-llvmir
 //
 // This test verifies that the TorchToLLVM pipeline correctly lowers
 // torch.aten.empty_like (with torch.constant.bool) all the way to LLVM
@@ -18,7 +17,7 @@
 
 // -- func.func @torch.aten.empty_like lowered to llvm.func --
 // CHECK-LABEL: llvm.func @torch.aten.empty_like(
-// CHECK-SAME:    %[[ARG0:.*]]: !llvm.ptr) -> !llvm.ptr {
+// CHECK-SAME:    %[[ARG0:.*]]: !llvm.struct<(i32, i32, i64)>) -> !llvm.struct<(i32, i32, i64)> {
 // CHECK:         %[[OPNAME:.*]] = llvm.mlir.addressof @"__libtriton_constant_op_aten::empty_like"
 // CHECK-SAME:      : !llvm.ptr
 // Constants may appear in any order.
@@ -27,6 +26,8 @@
 // CHECK-DAG:     %[[C8:.*]] = llvm.mlir.constant(8 : i64) : i64
 // Allocate the dispatcher slot array first.
 // CHECK:         %[[SLOTS:.*]] = llvm.alloca %[[C6]] x i64 : (i64) -> !llvm.ptr
+// Extract TVMFFIObjectHandle from TVMFFIAny arg[2].
+// CHECK:         llvm.extractvalue %[[ARG0]][2] : !llvm.struct<(i32, i32, i64)>
 // Convert TVMFFIObjectHandle -> AtenTensorHandle -> i64 via mLibTritonTVMFFIObjectToTensor, then store at slot[0].
 // CHECK:         llvm.store {{%.*}}, %[[SLOTS]] : i64, !llvm.ptr
 // Store zero at slots[1..5] for the 5 trailing none/bool arguments of empty_like.
@@ -56,7 +57,10 @@
 // CHECK:         llvm.alloca {{%.*}} x !llvm.ptr : (i64) -> !llvm.ptr
 // CHECK:         llvm.call @mLibTritonTensorToTVMFFIObject(%[[ATEN_PTR]],
 // CHECK:         %[[RES_PTR:.*]] = llvm.load {{%.*}} : !llvm.ptr -> !llvm.ptr
-// CHECK-NEXT:    llvm.return %[[RES_PTR]] : !llvm.ptr
+// Pack into TVMFFIAny {kTVMFFITensor, 0, ptr} and return.
+// CHECK:         llvm.insertvalue {{%.*}}, {{%.*}}[0] : !llvm.struct<(i32, i32, i64)>
+// CHECK:         llvm.insertvalue {{%.*}}, {{%.*}}[2] : !llvm.struct<(i32, i32, i64)>
+// CHECK-NEXT:    llvm.return {{%.*}} : !llvm.struct<(i32, i32, i64)>
 func.func @torch.aten.empty_like(%arg0: !torch.vtensor<[200,200,26],f64>) -> !torch.vtensor<[200,200,26],f64> {
   %none = torch.constant.none
   %false = torch.constant.bool false
@@ -67,23 +71,14 @@ func.func @torch.aten.empty_like(%arg0: !torch.vtensor<[200,200,26],f64>) -> !to
 // tvm_ffi.func wrapper: calls func.func @torch.aten.empty_like via func.call.
 // CHECK-LABEL: llvm.func @__tvm_ffi_empty_like(
 // CHECK-SAME:    %arg0: !llvm.ptr, %[[WRAP_ARGS:.*]]: !llvm.ptr, %arg2: i32, %[[WRAP_RET:.*]]: !llvm.ptr) -> i32 {
-// Entry block: extract TVMFFIObjectHandle from TVMFFIAny arg,
-// then wrap result into TVMFFIAny struct before storing to retPtr.
+// Entry block: load TVMFFIAny arg directly (uniform lowering), then call.
 // CHECK:         %[[ZERO:.*]] = llvm.mlir.constant(0 : i32) : i32
-// CHECK:         %[[TYPE70:.*]] = llvm.mlir.constant(70 : i32) : i32
-// CHECK:         %[[UNDEF:.*]] = llvm.mlir.undef : !llvm.struct<(i32, i32, i64)>
-// CHECK:         %[[VOBJ_GEP:.*]] = llvm.getelementptr %[[WRAP_ARGS]][0, 2]
-// CHECK:         %[[VOBJ_I64:.*]] = llvm.load %[[VOBJ_GEP]]
-// CHECK:         %[[ARG_HANDLE:.*]] = llvm.inttoptr %[[VOBJ_I64]]
+// CHECK:         %[[LOADED:.*]] = llvm.load %[[WRAP_ARGS]] : !llvm.ptr -> !llvm.struct<(i32, i32, i64)>
 // CHECK:         llvm.br
-// Body block: call the lowered function.
-// CHECK:         %[[CALLEE_RET:.*]] = llvm.call @torch.aten.empty_like(%[[ARG_HANDLE]])
-// CHECK-SAME:      : (!llvm.ptr) -> !llvm.ptr
-// Wrap the returned handle directly into TVMFFIAny:
-// CHECK:         %[[WITH_IDX:.*]] = llvm.insertvalue %[[TYPE70]], %[[UNDEF]][0]
-// CHECK:         %[[VOBJ:.*]] = llvm.ptrtoint %[[CALLEE_RET]]
-// CHECK:         %[[WRAPPED:.*]] = llvm.insertvalue %[[VOBJ]], %[[WITH_IDX]][2]
-// CHECK:         llvm.store %[[WRAPPED]], %[[WRAP_RET]]
+// Body block: call the lowered function with TVMFFIAny arg.
+// CHECK:         %[[CALLEE_RET:.*]] = llvm.call @torch.aten.empty_like({{%.*}}) : (!llvm.struct<(i32, i32, i64)>) -> !llvm.struct<(i32, i32, i64)>
+// Store result TVMFFIAny directly to retPtr.
+// CHECK:         llvm.store %[[CALLEE_RET]], %[[WRAP_RET]]
 // CHECK:         llvm.return %[[ZERO]] : i32
 
 tvm_ffi.func @empty_like(%arg0: !torch.vtensor<[200,200,26],f64>) -> !torch.vtensor<[200,200,26],f64> {

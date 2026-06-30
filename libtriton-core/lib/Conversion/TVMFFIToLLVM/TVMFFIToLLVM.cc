@@ -17,7 +17,6 @@
 #include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIDialect.h"
 #include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIOps.h"
 #include "libtriton-core/Dialect/TorchExt/Transforms/BackendTypeConversion.h"
-
 #include "mlir/Conversion/ConvertToLLVM/ToLLVMInterface.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -74,199 +73,6 @@ static mlir::Value getDLTensorPtr(mlir::OpBuilder &builder, mlir::Value slot) {
   return mlir::LLVM::GEPOp::create(
       builder, loc, ptrTy, i8Ty, handleObj,
       llvm::ArrayRef<mlir::LLVM::GEPArg>{sizeof(TVMFFIObject)});
-}
-
-/// Packs an LLVM value into a TVMFFIAny struct for the FFI return slot.
-static mlir::FailureOr<mlir::Value>
-To(mlir::Type type, mlir::OpBuilder &builder, mlir::Value input) {
-  mlir::MLIRContext *ctx = builder.getContext();
-  mlir::LLVM::LLVMStructType anyTy =
-      libtriton::conversion::utils::getTVMFFIAnyType(ctx);
-
-  if (mlir::isa<mlir::torch::Torch::BaseTensorType>(type)) {
-    return input;
-  } else if (mlir::isa<mlir::torch::Torch::BoolType>(type)) {
-    mlir::Value result =
-        mlir::LLVM::UndefOp::create(builder, input.getLoc(), anyTy);
-    mlir::Value typeIdx = mlir::LLVM::ConstantOp::create(
-        builder, input.getLoc(), mlir::IntegerType::get(ctx, 32), kTVMFFIBool);
-    result = mlir::LLVM::InsertValueOp::create(builder, input.getLoc(), anyTy,
-                                               result, typeIdx,
-                                               llvm::ArrayRef<int64_t>{0});
-    mlir::Value pl = mlir::LLVM::ZExtOp::create(
-        builder, input.getLoc(), mlir::IntegerType::get(ctx, 64), input);
-    return mlir::LLVM::InsertValueOp::create(builder, input.getLoc(), anyTy,
-                                             result, pl,
-                                             llvm::ArrayRef<int64_t>{2})
-        .getResult();
-  } else if (mlir::isa<mlir::torch::Torch::IntType>(type)) {
-    mlir::Value result =
-        mlir::LLVM::UndefOp::create(builder, input.getLoc(), anyTy);
-    mlir::Value typeIdx = mlir::LLVM::ConstantOp::create(
-        builder, input.getLoc(), mlir::IntegerType::get(ctx, 32), kTVMFFIInt);
-    result = mlir::LLVM::InsertValueOp::create(builder, input.getLoc(), anyTy,
-                                               result, typeIdx,
-                                               llvm::ArrayRef<int64_t>{0});
-    return mlir::LLVM::InsertValueOp::create(builder, input.getLoc(), anyTy,
-                                             result, input,
-                                             llvm::ArrayRef<int64_t>{2})
-        .getResult();
-  } else if (mlir::isa<mlir::torch::Torch::FloatType>(type)) {
-    mlir::Value result =
-        mlir::LLVM::UndefOp::create(builder, input.getLoc(), anyTy);
-    mlir::Value typeIdx = mlir::LLVM::ConstantOp::create(
-        builder, input.getLoc(), mlir::IntegerType::get(ctx, 32), kTVMFFIFloat);
-    result = mlir::LLVM::InsertValueOp::create(builder, input.getLoc(), anyTy,
-                                               result, typeIdx,
-                                               llvm::ArrayRef<int64_t>{0});
-    mlir::Value pl = mlir::LLVM::BitcastOp::create(
-        builder, input.getLoc(), mlir::IntegerType::get(ctx, 64), input);
-    return mlir::LLVM::InsertValueOp::create(builder, input.getLoc(), anyTy,
-                                             result, pl,
-                                             llvm::ArrayRef<int64_t>{2})
-        .getResult();
-  } else if (mlir::isa<mlir::torch::Torch::NoneType>(type)) {
-    mlir::Value result =
-        mlir::LLVM::UndefOp::create(builder, input.getLoc(), anyTy);
-    mlir::Value typeIdx = mlir::LLVM::ConstantOp::create(
-        builder, input.getLoc(), mlir::IntegerType::get(ctx, 32), kTVMFFINone);
-    result = mlir::LLVM::InsertValueOp::create(builder, input.getLoc(), anyTy,
-                                               result, typeIdx,
-                                               llvm::ArrayRef<int64_t>{0});
-    mlir::Value zero = mlir::LLVM::ConstantOp::create(
-        builder, input.getLoc(), mlir::IntegerType::get(ctx, 64), 0);
-    return mlir::LLVM::InsertValueOp::create(builder, input.getLoc(), anyTy,
-                                             result, zero,
-                                             llvm::ArrayRef<int64_t>{2})
-        .getResult();
-  } else if (mlir::isa<mlir::torch::Torch::ListType>(type)) {
-    // List types stored as kTVMFFIArray=71; return the pointer directly
-    // (handler wraps in TVMFFIAny at the call site, like tensor).
-    return input;
-  } else if (mlir::isa<mlir::torch::Torch::DeviceType>(type)) {
-    // Device: pack struct<(i32, i32)> into combined i64 with
-    // (device_index << 32) | device_type, stored as kTVMFFIDevice=6.
-    mlir::Value result =
-        mlir::LLVM::UndefOp::create(builder, input.getLoc(), anyTy);
-    mlir::Value typeIdx = mlir::LLVM::ConstantOp::create(
-        builder, input.getLoc(), mlir::IntegerType::get(ctx, 32),
-        kTVMFFIDevice);
-    result = mlir::LLVM::InsertValueOp::create(builder, input.getLoc(), anyTy,
-                                               result, typeIdx,
-                                               llvm::ArrayRef<int64_t>{0});
-    // Extract device_type (field 0) and device_index (field 1).
-    mlir::Value deviceType = mlir::LLVM::ExtractValueOp::create(
-        builder, input.getLoc(), input, llvm::ArrayRef<int64_t>{0});
-    mlir::Value deviceIndex = mlir::LLVM::ExtractValueOp::create(
-        builder, input.getLoc(), input, llvm::ArrayRef<int64_t>{1});
-    // Combine: (device_index << 32) | device_type.
-    mlir::Value devType64 = mlir::LLVM::ZExtOp::create(
-        builder, input.getLoc(), mlir::IntegerType::get(ctx, 64), deviceType);
-    mlir::Value devIdx64 = mlir::LLVM::ZExtOp::create(
-        builder, input.getLoc(), mlir::IntegerType::get(ctx, 64), deviceIndex);
-    mlir::Value shifted = mlir::LLVM::ShlOp::create(
-        builder, input.getLoc(), devIdx64,
-        mlir::LLVM::ConstantOp::create(builder, input.getLoc(),
-                                       mlir::IntegerType::get(ctx, 64), 32));
-    mlir::Value combined =
-        mlir::LLVM::OrOp::create(builder, input.getLoc(), devType64, shifted);
-    return mlir::LLVM::InsertValueOp::create(builder, input.getLoc(), anyTy,
-                                             result, combined,
-                                             llvm::ArrayRef<int64_t>{2})
-        .getResult();
-  } else {
-    return mlir::failure();
-  }
-}
-
-/// Unpacks a TVMFFIAny struct from the FFI argument slot.
-static mlir::FailureOr<mlir::Value>
-From(mlir::Type type, mlir::OpBuilder &builder, mlir::Value ptr) {
-  mlir::MLIRContext *ctx = builder.getContext();
-  mlir::LLVM::LLVMStructType anyTy =
-      libtriton::conversion::utils::getTVMFFIAnyType(ctx);
-  mlir::LLVM::LLVMPointerType ptrTy = mlir::LLVM::LLVMPointerType::get(ctx);
-
-  if (mlir::isa<mlir::torch::Torch::BaseTensorType>(type)) {
-    mlir::Value vobj =
-        mlir::LLVM::GEPOp::create(builder, ptr.getLoc(), ptrTy, anyTy, ptr,
-                                  llvm::ArrayRef<mlir::LLVM::GEPArg>{0, 2});
-    mlir::Value i64 = mlir::LLVM::LoadOp::create(
-        builder, ptr.getLoc(), mlir::IntegerType::get(ctx, 64), vobj);
-    return mlir::LLVM::IntToPtrOp::create(builder, ptr.getLoc(), ptrTy, i64)
-        .getResult();
-  } else if (mlir::isa<mlir::torch::Torch::BoolType>(type)) {
-    mlir::Value payloadPtr =
-        mlir::LLVM::GEPOp::create(builder, ptr.getLoc(), ptrTy, anyTy, ptr,
-                                  llvm::ArrayRef<mlir::LLVM::GEPArg>{0, 2});
-    mlir::Value loaded = mlir::LLVM::LoadOp::create(
-        builder, ptr.getLoc(), mlir::IntegerType::get(ctx, 64), payloadPtr);
-    return mlir::LLVM::TruncOp::create(builder, loaded.getLoc(),
-                                       mlir::IntegerType::get(ctx, 1), loaded)
-        .getResult();
-  } else if (mlir::isa<mlir::torch::Torch::IntType>(type)) {
-    mlir::Value payloadPtr =
-        mlir::LLVM::GEPOp::create(builder, ptr.getLoc(), ptrTy, anyTy, ptr,
-                                  llvm::ArrayRef<mlir::LLVM::GEPArg>{0, 2});
-    return mlir::LLVM::LoadOp::create(builder, ptr.getLoc(),
-                                      mlir::IntegerType::get(ctx, 64),
-                                      payloadPtr)
-        .getResult();
-  } else if (mlir::isa<mlir::torch::Torch::FloatType>(type)) {
-    mlir::Value payloadPtr =
-        mlir::LLVM::GEPOp::create(builder, ptr.getLoc(), ptrTy, anyTy, ptr,
-                                  llvm::ArrayRef<mlir::LLVM::GEPArg>{0, 2});
-    mlir::Value loaded = mlir::LLVM::LoadOp::create(
-        builder, ptr.getLoc(), mlir::IntegerType::get(ctx, 64), payloadPtr);
-    return mlir::LLVM::BitcastOp::create(builder, loaded.getLoc(),
-                                         mlir::Float64Type::get(ctx), loaded)
-        .getResult();
-  } else if (mlir::isa<mlir::torch::Torch::NoneType>(type)) {
-    return mlir::Value();
-  } else if (mlir::isa<mlir::torch::Torch::ListType>(type)) {
-    // List types (e.g., !torch.list<int>) are stored as kTVMFFIArray=71
-    // with v_obj pointing to the TVMFFIObjectHandle.
-    mlir::Value vobj =
-        mlir::LLVM::GEPOp::create(builder, ptr.getLoc(), ptrTy, anyTy, ptr,
-                                  llvm::ArrayRef<mlir::LLVM::GEPArg>{0, 2});
-    mlir::Value i64 = mlir::LLVM::LoadOp::create(
-        builder, ptr.getLoc(), mlir::IntegerType::get(ctx, 64), vobj);
-    return mlir::LLVM::IntToPtrOp::create(builder, ptr.getLoc(), ptrTy, i64)
-        .getResult();
-  } else if (mlir::isa<mlir::torch::Torch::DeviceType>(type)) {
-    // Device is stored as kTVMFFIDevice=6 with combined
-    // (device_index << 32) | device_type in the i64 payload.
-    mlir::Value payloadPtr =
-        mlir::LLVM::GEPOp::create(builder, ptr.getLoc(), ptrTy, anyTy, ptr,
-                                  llvm::ArrayRef<mlir::LLVM::GEPArg>{0, 2});
-    mlir::Value loaded = mlir::LLVM::LoadOp::create(
-        builder, ptr.getLoc(), mlir::IntegerType::get(ctx, 64), payloadPtr);
-    // Extract device_type (low 32 bits) and device_index (high 32 bits).
-    mlir::Value deviceType = mlir::LLVM::TruncOp::create(
-        builder, loaded.getLoc(), mlir::IntegerType::get(ctx, 32), loaded);
-    mlir::Value shifted = mlir::LLVM::LShrOp::create(
-        builder, loaded.getLoc(), loaded,
-        mlir::LLVM::ConstantOp::create(builder, loaded.getLoc(),
-                                       mlir::IntegerType::get(ctx, 64), 32));
-    mlir::Value deviceIndex = mlir::LLVM::TruncOp::create(
-        builder, loaded.getLoc(), mlir::IntegerType::get(ctx, 32), shifted);
-    // Build struct<(i32, i32)>.
-    mlir::LLVM::LLVMStructType deviceTy =
-        mlir::LLVM::LLVMStructType::getLiteral(
-            ctx,
-            {mlir::IntegerType::get(ctx, 32), mlir::IntegerType::get(ctx, 32)});
-    mlir::Value undef =
-        mlir::LLVM::UndefOp::create(builder, ptr.getLoc(), deviceTy);
-    mlir::Value withType = mlir::LLVM::InsertValueOp::create(
-        builder, ptr.getLoc(), deviceTy, undef, deviceType,
-        llvm::ArrayRef<int64_t>{0});
-    return mlir::LLVM::InsertValueOp::create(builder, ptr.getLoc(), deviceTy,
-                                             withType, deviceIndex,
-                                             llvm::ArrayRef<int64_t>{1})
-        .getResult();
-  } else {
-    return mlir::failure();
-  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -472,13 +278,11 @@ public:
       mlir::Value slot =
           mlir::LLVM::GEPOp::create(rewriter, loc, ptrTy, anyTy, argsPtr,
                                     llvm::ArrayRef<mlir::LLVM::GEPArg>{i});
-      mlir::Type argTy = arg.getType();
-      mlir::FailureOr<mlir::Value> loaded = From(argTy, rewriter, slot);
-      if (mlir::failed(loaded)) {
-        return op.emitError("unsupported input type: ") << argTy;
-      }
+      mlir::Value anySlot =
+          mlir::LLVM::LoadOp::create(rewriter, loc, anyTy, slot);
+      // All torch types uniformly lower to TVMFFIAny; pass through directly.
       mlir::Value casted = mlir::UnrealizedConversionCastOp::create(
-                               rewriter, loc, argTy, *loaded)
+                               rewriter, loc, arg.getType(), anySlot)
                                .getResult(0);
       mapping.map(arg, casted);
 
@@ -556,42 +360,13 @@ public:
           for (mlir::Value operand : returnOp.getOperands()) {
             mlir::Value retVal = mapping.lookupOrDefault(operand);
             mlir::Type operandTy = operand.getType();
+            // All torch types uniformly lower to TVMFFIAny; store directly.
             mlir::Value casted =
                 mlir::UnrealizedConversionCastOp::create(
                     rewriter, loc, getTypeConverter()->convertType(operandTy),
                     retVal)
                     .getResult(0);
-            mlir::FailureOr<mlir::Value> result =
-                To(operandTy, rewriter, casted);
-            if (mlir::failed(result)) {
-              return op.emitError("unsupported return type: ") << operandTy;
-            }
-            // For tensor/list types, the handler returns a TVMFFIObjectHandle
-            // (!llvm.ptr). We need to wrap it into a TVMFFIAny struct before
-            // storing to retPtr.
-            if (mlir::isa<mlir::torch::Torch::BaseTensorType>(operandTy) ||
-                mlir::isa<mlir::torch::Torch::ListType>(operandTy)) {
-              mlir::Value handle = *result;
-              mlir::Value wrapped =
-                  mlir::LLVM::UndefOp::create(rewriter, loc, anyTy);
-              int32_t typeCode =
-                  mlir::isa<mlir::torch::Torch::ListType>(operandTy)
-                      ? kTVMFFIArray
-                      : kTVMFFITensor;
-              mlir::Value typeIdx = mlir::LLVM::ConstantOp::create(
-                  rewriter, loc, i32Ty, typeCode);
-              wrapped = mlir::LLVM::InsertValueOp::create(
-                  rewriter, loc, anyTy, wrapped, typeIdx,
-                  llvm::ArrayRef<int64_t>{0});
-              mlir::Value vObj = mlir::LLVM::PtrToIntOp::create(
-                  rewriter, loc, rewriter.getIntegerType(64), handle);
-              wrapped = mlir::LLVM::InsertValueOp::create(rewriter, loc, anyTy,
-                                                          wrapped, vObj, {2});
-              mlir::LLVM::StoreOp::create(rewriter, loc, wrapped, retPtr);
-            } else {
-              // POD handlers return a full TVMFFIAny struct; store directly.
-              mlir::LLVM::StoreOp::create(rewriter, loc, *result, retPtr);
-            }
+            mlir::LLVM::StoreOp::create(rewriter, loc, casted, retPtr);
           }
           mlir::LLVM::ConstantOp cnst =
               mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, 0);
@@ -617,8 +392,6 @@ public:
     mlir::RewritePatternSet patterns(&context);
 
     torch::setupBackendTypeConversion(target, typeConverter);
-    target.addLegalOp<mlir::func::FuncOp, mlir::func::ReturnOp>();
-    target.addLegalDialect<mlir::torch::Torch::TorchDialect>();
     populateTVMFFIToLLVMConversionPatterns(target, typeConverter, patterns);
 
     if (mlir::failed(mlir::applyPartialConversion(getOperation(), target,
@@ -648,7 +421,8 @@ void populateTVMFFIToLLVMConversionPatterns(
   patterns.add<ConvertFuncOp>(typeConverter, patterns.getContext());
   target.addIllegalDialect<TVMFFIDialect>();
   target.addLegalDialect<mlir::BuiltinDialect, mlir::func::FuncDialect,
-                         mlir::LLVM::LLVMDialect>();
+                         mlir::LLVM::LLVMDialect,
+                         mlir::torch::Torch::TorchDialect>();
 }
 
 void registerConvertTVMFFIToLLVMInterface(mlir::DialectRegistry &registry) {

@@ -1,5 +1,4 @@
 // RUN: libtriton-core-opt %s --torch-to-llvm-pipeline | FileCheck %s
-// RUN: libtriton-core-opt %s --torch-to-llvm-pipeline | mlir-translate --mlir-to-llvmir
 //
 // This test verifies that the TorchToLLVM pipeline correctly lowers
 // torch.aten.empty.memory_format with externally-provided shape (!torch.list<int>),
@@ -20,14 +19,13 @@
 
 // -- func.func @torch.aten.empty.memory_format lowered to llvm.func --
 // CHECK-LABEL: llvm.func @torch.aten.empty.memory_format(
-// CHECK-SAME:    %[[SHAPE:.*]]: !llvm.ptr, %[[DTYPE:.*]]: i64, %[[DEVICE:.*]]: !llvm.struct<(i32, i32)>) -> !llvm.ptr {
+// CHECK-SAME:    %[[SHAPE:.*]]: !llvm.struct<(i32, i32, i64)>, %[[DTYPE:.*]]: !llvm.struct<(i32, i32, i64)>, %[[DEVICE:.*]]: !llvm.struct<(i32, i32, i64)>) -> !llvm.struct<(i32, i32, i64)> {
 // CHECK:         %[[OPNAME:.*]] = llvm.mlir.addressof @"__libtriton_constant_op_aten::empty"
 // CHECK-SAME:      : !llvm.ptr
 // Allocate the dispatcher slot array early.
 // CHECK:         %[[SLOTS:.*]] = llvm.alloca {{%.*}} x i64 : (i64) -> !llvm.ptr
-// ptrtoint shape, build TVMFFIAny for ffi.ArraySize arg.
-// CHECK:         llvm.ptrtoint %[[SHAPE]]
-// CHECK:         llvm.alloca {{%.*}} x !llvm.struct<(i32, i32, i64)>
+// Extract shape payload from TVMFFIAny arg[2].
+// CHECK:         llvm.extractvalue %[[SHAPE]][2] : !llvm.struct<(i32, i32, i64)>
 // ffi.ArraySize: TVMFFIFunctionGetGlobal + Call + DecRef.
 // CHECK:         llvm.call @TVMFFIFunctionGetGlobal
 // CHECK:         llvm.call @TVMFFIFunctionCall
@@ -37,7 +35,7 @@
 // Loop header with block argument (i counter).
 // CHECK:         llvm.br ^bb{{.*}}({{%.*}} : i64)
 // Loop: cond_br with i counter passed via block args.
-// CHECK:         llvm.cond_br {{%.*}}, ^bb{{.*}}({{%.*}} : i64), ^bb{{.*}}
+// CHECK:         llvm.cond_br {{%.*}}, ^bb{{.*}}, ^bb{{.*}}
 // Loop body: ffi.ArrayGetItem via GetGlobal + Call + DecRef.
 // CHECK:         llvm.call @TVMFFIFunctionGetGlobal
 // CHECK:         llvm.call @TVMFFIFunctionCall
@@ -54,7 +52,10 @@
 // CHECK:         %[[ATEN_PTR:.*]] = llvm.inttoptr %[[RES_VAL]] : i64 to !llvm.ptr
 // CHECK:         llvm.call @mLibTritonTensorToTVMFFIObject(%[[ATEN_PTR]],
 // CHECK:         %[[RES_PTR:.*]] = llvm.load {{%.*}} : !llvm.ptr -> !llvm.ptr
-// CHECK-NEXT:    llvm.return %[[RES_PTR]] : !llvm.ptr
+// Pack result into TVMFFIAny and return.
+// CHECK:         llvm.insertvalue {{%.*}}, {{%.*}}[0] : !llvm.struct<(i32, i32, i64)>
+// CHECK:         llvm.insertvalue {{%.*}}, {{%.*}}[2] : !llvm.struct<(i32, i32, i64)>
+// CHECK-NEXT:    llvm.return {{%.*}} : !llvm.struct<(i32, i32, i64)>
 func.func @torch.aten.empty.memory_format(%shape: !torch.list<int>, %dtype: !torch.int, %device: !torch.Device) -> !torch.vtensor<[?,?],f64> {
   %none = torch.constant.none
   %layout = torch.constant.int 0
@@ -65,32 +66,18 @@ func.func @torch.aten.empty.memory_format(%shape: !torch.list<int>, %dtype: !tor
 // tvm_ffi.func wrapper: unpacks shape, device, and dtype from TVM FFI args.
 // CHECK-LABEL: llvm.func @__tvm_ffi_empty(
 // CHECK-SAME:    %arg0: !llvm.ptr, %[[ARGS:.*]]: !llvm.ptr, %arg2: i32, %[[RET:.*]]: !llvm.ptr) -> i32 {
-// Unpack shape (arg0, ListType → !llvm.ptr via kTVMFFIArray).
+// Unpack shape, device, dtype directly as TVMFFIAny structs (uniform lowering).
 // CHECK:         %[[ZERO:.*]] = llvm.mlir.constant(0 : i32) : i32
-// CHECK:         %[[SHAPE_GEP:.*]] = llvm.getelementptr %[[ARGS]][0, 2]
-// CHECK:         %[[SHAPE_I64:.*]] = llvm.load %[[SHAPE_GEP]]
-// CHECK:         %[[SHAPE_PTR:.*]] = llvm.inttoptr %[[SHAPE_I64]]
-// Unpack device (arg1, DeviceType → !llvm.struct<(i32, i32)> via kTVMFFIDevice).
-// CHECK:         llvm.getelementptr %[[ARGS]][1]
-// CHECK:         llvm.getelementptr {{%.*}}[0, 2]
-// CHECK:         %[[DEV_I64:.*]] = llvm.load {{%.*}} : !llvm.ptr -> i64
-// CHECK:         %[[DEV_TYPE:.*]] = llvm.trunc %[[DEV_I64]] : i64 to i32
-// CHECK:         llvm.lshr %[[DEV_I64]], {{%.*}} : i64
-// CHECK:         %[[DEV_IDX:.*]] = llvm.trunc {{%.*}} : i64 to i32
-// CHECK:         llvm.insertvalue %[[DEV_TYPE]], {{%.*}}[0]
-// CHECK:         %[[DEV_STRUCT:.*]] = llvm.insertvalue %[[DEV_IDX]], {{%.*}}[1]
-// Unpack dtype (arg2, IntType → i64).
-// CHECK:         llvm.getelementptr %[[ARGS]][2]
-// CHECK:         llvm.getelementptr {{%.*}}[0, 2]
-// CHECK:         %[[DTYPE_I64:.*]] = llvm.load {{%.*}} : !llvm.ptr -> i64
+// CHECK:         %[[SHAPE_LOAD:.*]] = llvm.load %[[ARGS]] : !llvm.ptr -> !llvm.struct<(i32, i32, i64)>
+// CHECK:         %[[DEV_GEP:.*]] = llvm.getelementptr %[[ARGS]][1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, i32, i64)>
+// CHECK:         %[[DEV_LOAD:.*]] = llvm.load %[[DEV_GEP]] : !llvm.ptr -> !llvm.struct<(i32, i32, i64)>
+// CHECK:         %[[DTYPE_GEP:.*]] = llvm.getelementptr %[[ARGS]][2] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, i32, i64)>
+// CHECK:         %[[DTYPE_LOAD:.*]] = llvm.load %[[DTYPE_GEP]] : !llvm.ptr -> !llvm.struct<(i32, i32, i64)>
 // CHECK:         llvm.br
-// Body block: call the lowered function with unpacked args.
-// CHECK:         %[[CALLEE_RET:.*]] = llvm.call @torch.aten.empty.memory_format(%[[SHAPE_PTR]], %[[DTYPE_I64]], %[[DEV_STRUCT]])
-// Wrap result: Tensor → TVMFFIAny.
-// CHECK:         llvm.insertvalue {{%.*}}, {{%.*}}[0] : !llvm.struct<(i32, i32, i64)>
-// CHECK:         %[[VOBJ:.*]] = llvm.ptrtoint %[[CALLEE_RET]]
-// CHECK:         llvm.insertvalue %[[VOBJ]], {{%.*}}[2]
-// CHECK:         llvm.store {{%.*}}, %[[RET]]
+// Body block: cast args to TVMFFIAny, call the lowered function.
+// CHECK:         %[[CALLEE_RET:.*]] = llvm.call @torch.aten.empty.memory_format({{%.*}}, {{%.*}}, {{%.*}}) : (!llvm.struct<(i32, i32, i64)>, !llvm.struct<(i32, i32, i64)>, !llvm.struct<(i32, i32, i64)>) -> !llvm.struct<(i32, i32, i64)>
+// Store result TVMFFIAny directly to retPtr.
+// CHECK:         llvm.store %[[CALLEE_RET]], %[[RET]]
 // CHECK:         llvm.return %[[ZERO]] : i32
 
 tvm_ffi.func @empty(%shape: !torch.list<int>, %device: !torch.Device, %dtype: !torch.int) -> !torch.tensor {

@@ -1,5 +1,4 @@
 #include "libtriton-core/Utils/Registration.h"
-
 #include "libtriton-core/Conversion/Pipeline/Pipeline.h"
 #include "libtriton-core/Conversion/TVMFFIToLLVM/TVMFFIToLLVM.h"
 #include "libtriton-core/Conversion/TorchConversionToLLVM/TorchConversionToLLVM.h"
@@ -45,5 +44,6 @@ void libtriton::conversion::registerAllDialects(
   libtriton::torchext::registerConvertTorchExtToGPUInterface(registry);
   libtriton::torchext::registerConvertTorchExtToLLVMInterface(registry);
   libtriton::tvm_ffi::registerConvertTVMFFIToLLVMInterface(registry);
+  libtriton::torch::registerConvertTorchToLLVMInterface(registry);
   libtriton::torch::registerConvertTorchConversionToLLVMInterface(registry);
 }

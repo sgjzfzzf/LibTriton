@@ -1,5 +1,7 @@
 #include "libtriton-core/Conversion/TorchToLLVM/TorchToLLVM.h"
+#include "libtriton-core/Conversion/Utils/Type.h"
 #include "libtriton-core/Dialect/TorchExt/Transforms/BackendTypeConversion.h"
+#include "mlir/Conversion/ConvertToLLVM/ToLLVMInterface.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -7,8 +9,10 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "torch-mlir/Dialect/Torch/IR/TorchDialect.h"
 #include "torch-mlir/Dialect/Torch/IR/TorchOps.h"
 #include "torch/csrc/stable/c/shim.h"
+#include "tvm/ffi/c_api.h"
 
 namespace libtriton::torch {
 
@@ -21,7 +25,7 @@ namespace {
 // Lower torch.constant.* ops directly to LLVM::ConstantOp
 // ---------------------------------------------------------------------------
 
-/// Lowers torch.constant.bool to LLVM::ConstantOp (i1).
+/// Lowers torch.constant.bool to LLVM TVMFFIAny {kTVMFFIBool, 0, value}.
 class ConvertTorchConstantBoolOp
     : public mlir::OpConversionPattern<mlir::torch::Torch::ConstantBoolOp> {
 public:
@@ -31,14 +35,26 @@ public:
   mlir::LogicalResult
   matchAndRewrite(mlir::torch::Torch::ConstantBoolOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const override {
-    mlir::Type ty = getTypeConverter()->convertType(op.getType());
-    rewriter.replaceOpWithNewOp<mlir::LLVM::ConstantOp>(
-        op, ty, rewriter.getIntegerAttr(ty, op.getValue() ? 1 : 0));
+    mlir::Location loc = op.getLoc();
+    mlir::MLIRContext *ctx = rewriter.getContext();
+    mlir::Type anyTy = getTypeConverter()->convertType(op.getType());
+    mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
+    mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
+
+    mlir::Value result = mlir::LLVM::UndefOp::create(rewriter, loc, anyTy);
+    mlir::Value typeIdx =
+        mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, kTVMFFIBool);
+    result = mlir::LLVM::InsertValueOp::create(
+        rewriter, loc, anyTy, result, typeIdx, llvm::ArrayRef<int64_t>{0});
+    mlir::Value payload =
+        mlir::LLVM::ConstantOp::create(rewriter, loc, i64Ty, op.getValue());
+    rewriter.replaceOpWithNewOp<mlir::LLVM::InsertValueOp>(
+        op, anyTy, result, payload, llvm::ArrayRef<int64_t>{2});
     return mlir::success();
   }
 };
 
-/// Lowers torch.constant.int to LLVM::ConstantOp (i64).
+/// Lowers torch.constant.int to LLVM TVMFFIAny {kTVMFFIInt, 0, value}.
 class ConvertTorchConstantIntOp
     : public mlir::OpConversionPattern<mlir::torch::Torch::ConstantIntOp> {
 public:
@@ -48,14 +64,26 @@ public:
   mlir::LogicalResult
   matchAndRewrite(mlir::torch::Torch::ConstantIntOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const override {
-    mlir::Type ty = getTypeConverter()->convertType(op.getType());
-    rewriter.replaceOpWithNewOp<mlir::LLVM::ConstantOp>(
-        op, ty, rewriter.getIntegerAttr(ty, op.getValue()));
+    mlir::Location loc = op.getLoc();
+    mlir::MLIRContext *ctx = rewriter.getContext();
+    mlir::Type anyTy = getTypeConverter()->convertType(op.getType());
+    mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
+    mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
+
+    mlir::Value result = mlir::LLVM::UndefOp::create(rewriter, loc, anyTy);
+    mlir::Value typeIdx =
+        mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, kTVMFFIInt);
+    result = mlir::LLVM::InsertValueOp::create(
+        rewriter, loc, anyTy, result, typeIdx, llvm::ArrayRef<int64_t>{0});
+    mlir::Value payload =
+        mlir::LLVM::ConstantOp::create(rewriter, loc, i64Ty, op.getValue());
+    rewriter.replaceOpWithNewOp<mlir::LLVM::InsertValueOp>(
+        op, anyTy, result, payload, llvm::ArrayRef<int64_t>{2});
     return mlir::success();
   }
 };
 
-/// Lowers torch.constant.float to LLVM::ConstantOp (f64).
+/// Lowers torch.constant.float to LLVM TVMFFIAny {kTVMFFIFloat, 0, value}.
 class ConvertTorchConstantFloatOp
     : public mlir::OpConversionPattern<mlir::torch::Torch::ConstantFloatOp> {
 public:
@@ -65,14 +93,28 @@ public:
   mlir::LogicalResult
   matchAndRewrite(mlir::torch::Torch::ConstantFloatOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const override {
-    mlir::Type ty = getTypeConverter()->convertType(op.getType());
-    rewriter.replaceOpWithNewOp<mlir::LLVM::ConstantOp>(
-        op, ty, rewriter.getFloatAttr(ty, op.getValue()));
+    mlir::Location loc = op.getLoc();
+    mlir::MLIRContext *ctx = rewriter.getContext();
+    mlir::Type anyTy = getTypeConverter()->convertType(op.getType());
+    mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
+    mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
+
+    mlir::Value result = mlir::LLVM::UndefOp::create(rewriter, loc, anyTy);
+    mlir::Value typeIdx =
+        mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, kTVMFFIFloat);
+    result = mlir::LLVM::InsertValueOp::create(
+        rewriter, loc, anyTy, result, typeIdx, llvm::ArrayRef<int64_t>{0});
+    mlir::Value floatVal = mlir::LLVM::ConstantOp::create(
+        rewriter, loc, mlir::Float64Type::get(ctx), op.getValue());
+    mlir::Value payload =
+        mlir::LLVM::BitcastOp::create(rewriter, loc, i64Ty, floatVal);
+    rewriter.replaceOpWithNewOp<mlir::LLVM::InsertValueOp>(
+        op, anyTy, result, payload, llvm::ArrayRef<int64_t>{2});
     return mlir::success();
   }
 };
 
-/// Lowers torch.constant.none to LLVM::ConstantOp (i64 0).
+/// Lowers torch.constant.none to LLVM TVMFFIAny {kTVMFFINone, 0, 0}.
 class ConvertTorchConstantNoneOp
     : public mlir::OpConversionPattern<mlir::torch::Torch::ConstantNoneOp> {
 public:
@@ -82,17 +124,28 @@ public:
   mlir::LogicalResult
   matchAndRewrite(mlir::torch::Torch::ConstantNoneOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const override {
-    mlir::Type ty = getTypeConverter()->convertType(op.getType());
-    rewriter.replaceOpWithNewOp<mlir::LLVM::ConstantOp>(
-        op, ty, rewriter.getIntegerAttr(ty, 0));
+    mlir::Location loc = op.getLoc();
+    mlir::MLIRContext *ctx = rewriter.getContext();
+    mlir::Type anyTy = getTypeConverter()->convertType(op.getType());
+    mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
+    mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
+
+    mlir::Value result = mlir::LLVM::UndefOp::create(rewriter, loc, anyTy);
+    mlir::Value typeIdx =
+        mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, kTVMFFINone);
+    result = mlir::LLVM::InsertValueOp::create(
+        rewriter, loc, anyTy, result, typeIdx, llvm::ArrayRef<int64_t>{0});
+    mlir::Value payload =
+        mlir::LLVM::ConstantOp::create(rewriter, loc, i64Ty, 0);
+    rewriter.replaceOpWithNewOp<mlir::LLVM::InsertValueOp>(
+        op, anyTy, result, payload, llvm::ArrayRef<int64_t>{2});
     return mlir::success();
   }
 };
 
-/// Lowers torch.constant.device to LLVM struct {i32 device_type, i32
-/// device_index}.  The device value *must* be preserved because downstream
-/// ops (e.g. torch.aten.empty.memory_format) rely on it to allocate output
-/// tensors on the correct device.
+/// Lowers torch.constant.device to LLVM TVMFFIAny {kTVMFFIDevice, 0, combined}.
+/// The device value is encoded as (device_index << 32) | device_type in the
+/// i64 payload, matching the TVM FFI kTVMFFIDevice convention.
 class ConvertTorchConstantDeviceOp
     : public mlir::OpConversionPattern<mlir::torch::Torch::ConstantDeviceOp> {
 public:
@@ -102,18 +155,14 @@ public:
   mlir::LogicalResult
   matchAndRewrite(mlir::torch::Torch::ConstantDeviceOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const override {
-    mlir::MLIRContext *ctx = rewriter.getContext();
     mlir::Location loc = op.getLoc();
+    mlir::MLIRContext *ctx = rewriter.getContext();
+    mlir::Type anyTy = getTypeConverter()->convertType(op.getType());
     mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
-
-    // The result type is {i32 device_type, i32 device_index}.
-    mlir::LLVM::LLVMStructType structTy =
-        mlir::cast<mlir::LLVM::LLVMStructType>(
-            getTypeConverter()->convertType(op.getType()));
+    mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
 
     // Parse the device string (e.g. "cuda:0", "cpu") using PyTorch's
-    // stable C API.  This correctly handles all device types and returns
-    // AOTI-compatible values (matching aoti_torch_device_type_*()).
+    // stable C API.
     llvm::StringRef dev = op.getValue();
     uint32_t deviceType = 0;
     int32_t deviceIndex = 0;
@@ -121,16 +170,26 @@ public:
       return op.emitError("failed to parse device string: ") << dev;
     }
 
-    // Build the struct: undef → insert device_type → insert device_index.
-    mlir::Value result = mlir::LLVM::UndefOp::create(rewriter, loc, structTy);
-    mlir::Value typeVal =
-        mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, deviceType);
+    // Build TVMFFIAny: {kTVMFFIDevice=6, 0, (device_index<<32)|device_type}.
+    mlir::Value result = mlir::LLVM::UndefOp::create(rewriter, loc, anyTy);
+    mlir::Value typeIdx =
+        mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, kTVMFFIDevice);
     result = mlir::LLVM::InsertValueOp::create(
-        rewriter, loc, structTy, result, typeVal, llvm::ArrayRef<int64_t>{0});
-    mlir::Value idxVal =
-        mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, deviceIndex);
+        rewriter, loc, anyTy, result, typeIdx, llvm::ArrayRef<int64_t>{0});
+
+    // Encode: (device_index << 32) | device_type.
+    mlir::Value devType64 =
+        mlir::LLVM::ConstantOp::create(rewriter, loc, i64Ty, deviceType);
+    mlir::Value devIdx64 =
+        mlir::LLVM::ConstantOp::create(rewriter, loc, i64Ty, deviceIndex);
+    mlir::Value shifted = mlir::LLVM::ShlOp::create(
+        rewriter, loc, devIdx64,
+        mlir::LLVM::ConstantOp::create(rewriter, loc, i64Ty, 32));
+    mlir::Value combined =
+        mlir::LLVM::OrOp::create(rewriter, loc, devType64, shifted);
+
     rewriter.replaceOpWithNewOp<mlir::LLVM::InsertValueOp>(
-        op, structTy, result, idxVal, llvm::ArrayRef<int64_t>{1});
+        op, anyTy, result, combined, llvm::ArrayRef<int64_t>{2});
     return mlir::success();
   }
 };
@@ -147,23 +206,27 @@ public:
     mlir::ConversionTarget target(getContext());
     mlir::RewritePatternSet patterns(&getContext());
 
-    setupBackendTypeConversion(target, typeConverter);
-
-    target.addIllegalOp<
-        mlir::torch::Torch::ConstantBoolOp, mlir::torch::Torch::ConstantIntOp,
-        mlir::torch::Torch::ConstantFloatOp, mlir::torch::Torch::ConstantNoneOp,
-        mlir::torch::Torch::ConstantDeviceOp>();
-    target.addLegalDialect<mlir::LLVM::LLVMDialect, mlir::BuiltinDialect>();
-
-    patterns.add<ConvertTorchConstantBoolOp, ConvertTorchConstantIntOp,
-                 ConvertTorchConstantFloatOp, ConvertTorchConstantNoneOp,
-                 ConvertTorchConstantDeviceOp>(typeConverter,
-                                               patterns.getContext());
+    populateTorchToLLVMConversionPatterns(target, typeConverter, patterns);
 
     if (mlir::failed(mlir::applyPartialConversion(getOperation(), target,
                                                   std::move(patterns)))) {
       signalPassFailure();
     }
+  }
+};
+
+// ---------------------------------------------------------------------------
+// ConvertToLLVM interface for Torch dialect
+// ---------------------------------------------------------------------------
+
+struct TorchToLLVMDialectInterface
+    : public mlir::ConvertToLLVMPatternInterface {
+  using ConvertToLLVMPatternInterface::ConvertToLLVMPatternInterface;
+
+  void populateConvertToLLVMConversionPatterns(
+      mlir::ConversionTarget &target, mlir::LLVMTypeConverter &typeConverter,
+      mlir::RewritePatternSet &patterns) const final {
+    populateTorchToLLVMConversionPatterns(target, typeConverter, patterns);
   }
 };
 
@@ -174,8 +237,22 @@ void populateTorchToLLVMConversionPatterns(
     mlir::RewritePatternSet &patterns) {
   setupBackendTypeConversion(target, typeConverter);
   patterns.add<ConvertTorchConstantBoolOp, ConvertTorchConstantIntOp,
-               ConvertTorchConstantFloatOp>(typeConverter,
-                                            patterns.getContext());
+               ConvertTorchConstantFloatOp, ConvertTorchConstantNoneOp,
+               ConvertTorchConstantDeviceOp>(typeConverter,
+                                             patterns.getContext());
+  target.addIllegalOp<
+      mlir::torch::Torch::ConstantBoolOp, mlir::torch::Torch::ConstantIntOp,
+      mlir::torch::Torch::ConstantFloatOp, mlir::torch::Torch::ConstantNoneOp,
+      mlir::torch::Torch::ConstantDeviceOp>();
+  target.addLegalDialect<mlir::LLVM::LLVMDialect, mlir::BuiltinDialect,
+                         mlir::func::FuncDialect>();
+}
+
+void registerConvertTorchToLLVMInterface(mlir::DialectRegistry &registry) {
+  registry.addExtension(
+      +[](mlir::MLIRContext *ctx, mlir::torch::Torch::TorchDialect *dialect) {
+        dialect->addInterfaces<TorchToLLVMDialectInterface>();
+      });
 }
 
 } // namespace libtriton::torch

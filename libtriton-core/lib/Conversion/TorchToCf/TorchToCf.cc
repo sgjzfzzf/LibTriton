@@ -1,13 +1,18 @@
 #include "libtriton-core/Conversion/TorchToCf/TorchToCf.h"
+#include "libtriton-core/Conversion/Utils/Type.h"
 #include "libtriton-core/Dialect/TorchExt/Transforms/BackendTypeConversion.h"
 
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Rewrite/FrozenRewritePatternSet.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "torch-mlir/Dialect/Torch/IR/TorchOps.h"
 #include "torch-mlir/Dialect/Torch/IR/TorchTypes.h"
 
@@ -19,15 +24,28 @@ namespace libtriton::torch {
 namespace {
 
 class ConvertRuntimeAssertOp
-    : public mlir::OpConversionPattern<mlir::torch::Torch::RuntimeAssertOp> {
+    : public mlir::OpRewritePattern<mlir::torch::Torch::RuntimeAssertOp> {
 public:
-  using OpConversionPattern::OpConversionPattern;
+  using OpRewritePattern::OpRewritePattern;
 
   mlir::LogicalResult
-  matchAndRewrite(mlir::torch::Torch::RuntimeAssertOp op, OpAdaptor adaptor,
-                  mlir::ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<mlir::cf::AssertOp>(op, adaptor.getCondition(),
-                                                    adaptor.getMessage());
+  matchAndRewrite(mlir::torch::Torch::RuntimeAssertOp op,
+                  mlir::PatternRewriter &rewriter) const override {
+    mlir::Location loc = op.getLoc();
+    mlir::MLIRContext *ctx = rewriter.getContext();
+    mlir::Value cond = op.getCondition();
+    mlir::IntegerType i1Ty = mlir::IntegerType::get(ctx, 1);
+
+    cond = llvm::isa<mlir::LLVM::LLVMStructType>(cond.getType())
+               ? mlir::LLVM::TruncOp::create(
+                     rewriter, loc, i1Ty,
+                     mlir::LLVM::ExtractValueOp::create(
+                         rewriter, loc, cond, llvm::ArrayRef<int64_t>{2}))
+               : mlir::UnrealizedConversionCastOp::create(rewriter, loc, i1Ty,
+                                                          cond)
+                     .getResult(0);
+
+    rewriter.replaceOpWithNewOp<mlir::cf::AssertOp>(op, cond, op.getMessage());
     return mlir::success();
   }
 };
@@ -43,8 +61,8 @@ public:
     setupBackendTypeConversion(target, typeConverter);
     populateTorchToCfConversionPatterns(target, typeConverter, patterns);
 
-    if (mlir::failed(mlir::applyPartialConversion(getOperation(), target,
-                                                  std::move(patterns)))) {
+    if (mlir::failed(
+            mlir::applyPatternsGreedily(getOperation(), std::move(patterns)))) {
       signalPassFailure();
     }
   }
@@ -55,10 +73,9 @@ public:
 void populateTorchToCfConversionPatterns(mlir::ConversionTarget &target,
                                          mlir::TypeConverter &typeConverter,
                                          mlir::RewritePatternSet &patterns) {
-  patterns.add<ConvertRuntimeAssertOp>(typeConverter, patterns.getContext());
+  patterns.add<ConvertRuntimeAssertOp>(patterns.getContext());
+  target.addLegalDialect<mlir::cf::ControlFlowDialect>();
   target.addIllegalOp<mlir::torch::Torch::RuntimeAssertOp>();
-  target
-      .addLegalDialect<mlir::cf::ControlFlowDialect, mlir::func::FuncDialect>();
 }
 
 } // namespace libtriton::torch

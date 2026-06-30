@@ -50,13 +50,12 @@ public:
         llvm::map_to_vector(operands, [](mlir::Value v) { return wrap(v); });
 
     // Allocate output array (handles zero results gracefully).
-    uint32_t numResults = op->getNumResults();
-    llvm::SmallVector<MlirValue> mlirResults(numResults, {nullptr});
+    llvm::SmallVector<MlirValue> mlirResults(op->getNumResults(), {nullptr});
 
     // Delegate the full lowering to SchemaLookup.
-    if (mLibTritonSchemaDispatchTorchAtenOp(wrap(op), wrappedOperands.data(),
-                                            mlirResults.data(),
-                                            wrap(&rewriter))) {
+    if (LibTritonSchemaDispatchTorchAtenOp(wrap(op), wrappedOperands.data(),
+                                           mlirResults.data(),
+                                           wrap(&rewriter))) {
       return mlir::failure();
     }
 
@@ -96,15 +95,8 @@ public:
       return op.emitError("op is not inside a module");
     }
 
-    // Only List[int] is supported (elements are i64 after adaptation).
+    // Adapted elements are now TVMFFIAny. Extract i64 payload from each.
     mlir::ValueRange elements = adaptor.getElements();
-    if (llvm::any_of(elements, [](mlir::Value adaptedElem) {
-          return !adaptedElem.getType().isInteger(64);
-        })) {
-      return op.emitError("unsupported non-int element type in ListConstruct");
-    }
-
-    // Build contiguous TVMFFIAny[N] args array (all kTVMFFIInt=1).
     mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
     mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
     mlir::LLVM::LLVMStructType anyTy =
@@ -117,7 +109,11 @@ public:
         mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, kTVMFFIInt);
     mlir::Value zero32 =
         mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, 0);
-    for (size_t i = 0; i < N; ++i) {
+    for (auto [i, element] : llvm::enumerate(elements)) {
+      // Extract i64 payload from the TVMFFIAny element.
+      mlir::Value elemPayload = mlir::LLVM::ExtractValueOp::create(
+          rewriter, loc, element, llvm::ArrayRef<int64_t>{2});
+
       mlir::Value slot =
           mlir::LLVM::GEPOp::create(rewriter, loc, ptrTy, anyTy, ffiArgs,
                                     llvm::ArrayRef<mlir::LLVM::GEPArg>{i});
@@ -130,7 +126,7 @@ public:
           mlir::LLVM::GEPOp::create(rewriter, loc, ptrTy, anyTy, slot,
                                     llvm::ArrayRef<mlir::LLVM::GEPArg>{0, 1}));
       mlir::LLVM::StoreOp::create(
-          rewriter, loc, elements[i],
+          rewriter, loc, elemPayload,
           mlir::LLVM::GEPOp::create(rewriter, loc, ptrTy, anyTy, slot,
                                     llvm::ArrayRef<mlir::LLVM::GEPArg>{0, 2}));
     }
@@ -149,14 +145,27 @@ public:
       return mlir::failure();
     }
 
-    // Extract v_obj (field[2]) from result TVMFFIAny → inttoptr.
+    // Extract v_obj (field[2]) from result TVMFFIAny and wrap it back
+    // in a TVMFFIAny with kTVMFFIArray tag so downstream consumers
+    // (SchemaLookup for aten ops, ConvertListDeleteListOp, etc.) always
+    // see a proper TVMFFIAny value instead of a raw pointer that would
+    // force an unreconcilable unrealized_conversion_cast.
     mlir::Value resultSlot = *result;
     mlir::Value vObjGEP =
         mlir::LLVM::GEPOp::create(rewriter, loc, ptrTy, anyTy, resultSlot,
                                   llvm::ArrayRef<mlir::LLVM::GEPArg>{0, 2});
     mlir::Value vObj =
         mlir::LLVM::LoadOp::create(rewriter, loc, i64Ty, vObjGEP);
-    rewriter.replaceOpWithNewOp<mlir::LLVM::IntToPtrOp>(op, ptrTy, vObj);
+
+    // Build TVMFFIAny {kTVMFFIArray, 0, vObj}.
+    mlir::Value anyResult = mlir::LLVM::UndefOp::create(rewriter, loc, anyTy);
+    mlir::Value kTVMFFIArrayVal =
+        mlir::LLVM::ConstantOp::create(rewriter, loc, i32Ty, kTVMFFIArray);
+    anyResult = mlir::LLVM::InsertValueOp::create(rewriter, loc, anyTy,
+                                                  anyResult, kTVMFFIArrayVal,
+                                                  llvm::ArrayRef<int64_t>{0});
+    rewriter.replaceOpWithNewOp<mlir::LLVM::InsertValueOp>(
+        op, anyTy, anyResult, vObj, llvm::ArrayRef<int64_t>{2});
     return mlir::success();
   }
 };
@@ -184,7 +193,14 @@ public:
       return mlir::failure();
     }
 
-    mlir::LLVM::CallOp::create(rewriter, loc, *calleeOrErr, adaptor.getList());
+    // The adapted list is a TVMFFIAny — extract the pointer from field[2].
+    mlir::Value anyVal = adaptor.getList();
+    mlir::Value payloadI64 = mlir::LLVM::ExtractValueOp::create(
+        rewriter, loc, anyVal, llvm::ArrayRef<int64_t>{2});
+    mlir::Value handle = mlir::LLVM::IntToPtrOp::create(
+        rewriter, loc, mlir::LLVM::LLVMPointerType::get(ctx), payloadI64);
+    mlir::LLVM::CallOp::create(rewriter, loc, *calleeOrErr,
+                               mlir::ValueRange{handle});
     rewriter.eraseOp(op);
     return mlir::success();
   }
@@ -230,8 +246,12 @@ void populateTorchExtToLLVMConversionPatterns(
     mlir::RewritePatternSet &patterns) {
   patterns.add<ConvertAtenDispatcherOp, ConvertPrimListConstructOp,
                ConvertListDeleteListOp>(typeConverter, patterns.getContext());
-  target.addIllegalOp<mlir::torch::Torch::PrimListConstructOp>();
-  target.addIllegalDialect<TorchExtDialect>();
+  target.addIllegalOp<mlir::torch::Torch::PrimListConstructOp,
+                      libtriton::torchext::ListDeleteListOp>();
+  target.addDynamicallyLegalDialect<libtriton::torchext::TorchExtDialect>(
+      [&](mlir::Operation *op) {
+        return !op->getName().getStringRef().starts_with("torch.aten.");
+      });
   target.addLegalDialect<mlir::BuiltinDialect, mlir::LLVM::LLVMDialect>();
 }
 

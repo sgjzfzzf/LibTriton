@@ -2,10 +2,8 @@
 
 // CHECK-LABEL: llvm.func @__tvm_ffi_cuda_device_guard(
 // CHECK:         [[SLOT:%[a-z0-9]+]] = llvm.getelementptr %arg1[0]
-// CHECK:         [[HANDLE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
-// CHECK:         [[HANDLE_I64:%[a-z0-9]+]] = llvm.load [[HANDLE_GEP]]
-// CHECK:         [[HANDLE_PTR:%[a-z0-9]+]] = llvm.inttoptr [[HANDLE_I64]]
-// CHECK:         [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[HANDLE_PTR]]
+// CHECK:         [[LOADED:%[a-z0-9]+]] = llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(i32, i32, i64)>
+// CHECK-NEXT:    [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[LOADED]] : !llvm.struct<(i32, i32, i64)> to !torch.tensor
 // CHECK:         [[RAW_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
 // CHECK:         [[RAW_I64:%[a-z0-9]+]] = llvm.load [[RAW_GEP]]
 // CHECK:         [[OBJ:%[a-z0-9]+]] = llvm.inttoptr [[RAW_I64]]
@@ -34,10 +32,8 @@ tvm_ffi.func @cuda_device_guard(%arg0: !torch.tensor {tvm_ffi.guard = [#tvm_ffi.
 
 // CHECK-LABEL: llvm.func @__tvm_ffi_dimension_guard(
 // CHECK:         [[SLOT:%[a-z0-9]+]] = llvm.getelementptr %arg1[0]
-// CHECK:         [[HANDLE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
-// CHECK:         [[HANDLE_I64:%[a-z0-9]+]] = llvm.load [[HANDLE_GEP]]
-// CHECK:         [[HANDLE_PTR:%[a-z0-9]+]] = llvm.inttoptr [[HANDLE_I64]]
-// CHECK:         [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[HANDLE_PTR]]
+// CHECK:         [[LOADED:%[a-z0-9]+]] = llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(i32, i32, i64)>
+// CHECK-NEXT:    [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[LOADED]] : !llvm.struct<(i32, i32, i64)> to !torch.tensor
 // CHECK:         [[RAW_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
 // CHECK:         [[RAW_I64:%[a-z0-9]+]] = llvm.load [[RAW_GEP]]
 // CHECK:         [[OBJ:%[a-z0-9]+]] = llvm.inttoptr [[RAW_I64]]
@@ -61,10 +57,8 @@ tvm_ffi.func @dimension_guard(%arg0: !torch.tensor {tvm_ffi.guard = [#tvm_ffi.Di
 
 // CHECK-LABEL: llvm.func @__tvm_ffi_dtype_guard(
 // CHECK:         [[SLOT:%[a-z0-9]+]] = llvm.getelementptr %arg1[0]
-// CHECK:         [[HANDLE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
-// CHECK:         [[HANDLE_I64:%[a-z0-9]+]] = llvm.load [[HANDLE_GEP]]
-// CHECK:         [[HANDLE_PTR:%[a-z0-9]+]] = llvm.inttoptr [[HANDLE_I64]]
-// CHECK:         [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[HANDLE_PTR]]
+// CHECK:         [[LOADED:%[a-z0-9]+]] = llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(i32, i32, i64)>
+// CHECK-NEXT:    [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[LOADED]] : !llvm.struct<(i32, i32, i64)> to !torch.tensor
 // CHECK:         [[RAW_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
 // CHECK:         [[RAW_I64:%[a-z0-9]+]] = llvm.load [[RAW_GEP]]
 // CHECK:         [[OBJ:%[a-z0-9]+]] = llvm.inttoptr [[RAW_I64]]
@@ -87,10 +81,8 @@ tvm_ffi.func @dtype_guard(%arg0: !torch.tensor {tvm_ffi.guard = [#tvm_ffi.DtypeG
 
 // CHECK-LABEL: llvm.func @__tvm_ffi_size_guard(
 // CHECK:         [[SLOT:%[a-z0-9]+]] = llvm.getelementptr %arg1[0]
-// CHECK:         [[HANDLE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
-// CHECK:         [[HANDLE_I64:%[a-z0-9]+]] = llvm.load [[HANDLE_GEP]]
-// CHECK:         [[HANDLE_PTR:%[a-z0-9]+]] = llvm.inttoptr [[HANDLE_I64]]
-// CHECK:         [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[HANDLE_PTR]]
+// CHECK:         [[LOADED:%[a-z0-9]+]] = llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(i32, i32, i64)>
+// CHECK-NEXT:    [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[LOADED]] : !llvm.struct<(i32, i32, i64)> to !torch.tensor
 // CHECK:         [[RAW_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
 // CHECK:         [[RAW_I64:%[a-z0-9]+]] = llvm.load [[RAW_GEP]]
 // CHECK:         [[OBJ:%[a-z0-9]+]] = llvm.inttoptr [[RAW_I64]]
@@ -116,10 +108,8 @@ tvm_ffi.func @size_guard(%arg0: !torch.tensor {tvm_ffi.guard = [#tvm_ffi.SizeGua
 
 // CHECK-LABEL: llvm.func @__tvm_ffi_storage_offset_guard(
 // CHECK:         [[SLOT:%[a-z0-9]+]] = llvm.getelementptr %arg1[0]
-// CHECK:         [[HANDLE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
-// CHECK:         [[HANDLE_I64:%[a-z0-9]+]] = llvm.load [[HANDLE_GEP]]
-// CHECK:         [[HANDLE_PTR:%[a-z0-9]+]] = llvm.inttoptr [[HANDLE_I64]]
-// CHECK:         [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[HANDLE_PTR]]
+// CHECK:         [[LOADED:%[a-z0-9]+]] = llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(i32, i32, i64)>
+// CHECK-NEXT:    [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[LOADED]] : !llvm.struct<(i32, i32, i64)> to !torch.tensor
 // CHECK:         [[RAW_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
 // CHECK:         [[RAW_I64:%[a-z0-9]+]] = llvm.load [[RAW_GEP]]
 // CHECK:         [[OBJ:%[a-z0-9]+]] = llvm.inttoptr [[RAW_I64]]
@@ -143,10 +133,8 @@ tvm_ffi.func @storage_offset_guard(%arg0: !torch.tensor {tvm_ffi.guard = [#tvm_f
 
 // CHECK-LABEL: llvm.func @__tvm_ffi_stride_guard(
 // CHECK:         [[SLOT:%[a-z0-9]+]] = llvm.getelementptr %arg1[0]
-// CHECK:         [[HANDLE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
-// CHECK:         [[HANDLE_I64:%[a-z0-9]+]] = llvm.load [[HANDLE_GEP]]
-// CHECK:         [[HANDLE_PTR:%[a-z0-9]+]] = llvm.inttoptr [[HANDLE_I64]]
-// CHECK:         [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[HANDLE_PTR]]
+// CHECK:         [[LOADED:%[a-z0-9]+]] = llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(i32, i32, i64)>
+// CHECK-NEXT:    [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[LOADED]] : !llvm.struct<(i32, i32, i64)> to !torch.tensor
 // CHECK:         [[RAW_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
 // CHECK:         [[RAW_I64:%[a-z0-9]+]] = llvm.load [[RAW_GEP]]
 // CHECK:         [[OBJ:%[a-z0-9]+]] = llvm.inttoptr [[RAW_I64]]
@@ -172,10 +160,8 @@ tvm_ffi.func @stride_guard(%arg0: !torch.tensor {tvm_ffi.guard = [#tvm_ffi.Strid
 
 // CHECK-LABEL: llvm.func @__tvm_ffi_tensor_type_guard(
 // CHECK:         [[SLOT:%[a-z0-9]+]] = llvm.getelementptr %arg1[0]
-// CHECK:         [[HANDLE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 2]
-// CHECK:         [[HANDLE_I64:%[a-z0-9]+]] = llvm.load [[HANDLE_GEP]]
-// CHECK:         [[HANDLE_PTR:%[a-z0-9]+]] = llvm.inttoptr [[HANDLE_I64]]
-// CHECK:         [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[HANDLE_PTR]]
+// CHECK:         [[LOADED:%[a-z0-9]+]] = llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(i32, i32, i64)>
+// CHECK-NEXT:    [[SLOT_CAST:%[a-z0-9]+]] = builtin.unrealized_conversion_cast [[LOADED]] : !llvm.struct<(i32, i32, i64)> to !torch.tensor
 // CHECK:         [[TYPE_GEP:%[a-z0-9]+]] = llvm.getelementptr [[SLOT]][0, 0]
 // CHECK:         [[TYPE_CODE:%[a-z0-9]+]] = llvm.load [[TYPE_GEP]]
 // CHECK:         [[EXPECTED:%[a-z0-9]+]] = llvm.mlir.constant(70 : i32) : i32

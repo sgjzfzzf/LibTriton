@@ -23,6 +23,7 @@ void populateTorchToLLVMConversionPatterns(
     mlir::RewritePatternSet &patterns);
 
 void registerConvertTorchToLLVMPass();
+void registerConvertTorchToLLVMInterface(mlir::DialectRegistry &registry);
 
 } // namespace libtriton::torch
 

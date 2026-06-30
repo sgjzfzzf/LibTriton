@@ -11,10 +11,9 @@
 #include "libtriton-core/Conversion/Utils/Type.h"
 #include "libtriton-core/Dialect/TorchExt/IR/TorchExtDialect.h"
 #include "libtriton-core/Dialect/TorchExt/IR/TorchExtOps.h"
-
 #include "libtriton-core/Dialect/TorchExt/Transforms/BackendTypeConversion.h"
-#include "mlir/Conversion/ConvertToLLVM/ToLLVMInterface.h"
 
+#include "mlir/Conversion/ConvertToLLVM/ToLLVMInterface.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -47,6 +46,7 @@ public:
                   mlir::ConversionPatternRewriter &rewriter) const override {
     mlir::Location loc = op.getLoc();
     mlir::MLIRContext *ctx = rewriter.getContext();
+    mlir::IntegerType i1Ty = mlir::IntegerType::get(ctx, 1);
     mlir::IntegerType i8Ty = mlir::IntegerType::get(ctx, 8);
     mlir::IntegerType i32Ty = mlir::IntegerType::get(ctx, 32);
     mlir::IntegerType i64Ty = mlir::IntegerType::get(ctx, 64);
@@ -79,16 +79,37 @@ public:
     for (auto [orig, adapted] :
          llvm::zip(op.getKernelOperands(), adaptor.getKernelOperands())) {
       if (mlir::isa<mlir::torch::Torch::BaseTensorType>(orig.getType())) {
+        // Extract pointer from TVMFFIAny field[2].
+        mlir::Value handleInt =
+            mlir::LLVM::ExtractValueOp::create(rewriter, loc, adapted,
+                                               llvm::ArrayRef<int64_t>{2})
+                .getResult();
+        mlir::Value handle =
+            mlir::LLVM::IntToPtrOp::create(rewriter, loc, ptrTy, handleInt);
+        // Skip 24-byte TVMFFIObject header to reach DLTensor.
         mlir::Value dlTensorPtr = mlir::LLVM::GEPOp::create(
-            rewriter, loc, ptrTy, i8Ty, adapted,
+            rewriter, loc, ptrTy, i8Ty, handle,
             llvm::ArrayRef<mlir::LLVM::GEPArg>{sizeof(TVMFFIObject)});
         mlir::Value dataGep = mlir::LLVM::GEPOp::create(
             rewriter, loc, ptrTy, dlTensorTy, dlTensorPtr,
             llvm::ArrayRef<mlir::LLVM::GEPArg>{0, 0});
         operands.push_back(
             mlir::LLVM::LoadOp::create(rewriter, loc, ptrTy, dataGep));
+      } else if (mlir::isa<mlir::torch::Torch::BoolType>(orig.getType())) {
+        // Bool: extract i64 payload and truncate to i1.
+        mlir::Value payload =
+            mlir::LLVM::ExtractValueOp::create(rewriter, loc, adapted,
+                                               llvm::ArrayRef<int64_t>{2})
+                .getResult();
+        operands.push_back(
+            mlir::LLVM::TruncOp::create(rewriter, loc, i1Ty, payload));
       } else {
-        operands.push_back(adapted);
+        // Scalar: extract i64 payload from TVMFFIAny field[2].
+        mlir::Value payload =
+            mlir::LLVM::ExtractValueOp::create(rewriter, loc, adapted,
+                                               llvm::ArrayRef<int64_t>{2})
+                .getResult();
+        operands.push_back(payload);
       }
     }
 
