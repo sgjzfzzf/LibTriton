@@ -3,6 +3,7 @@ add_mlir_conversion_library(
   Pipeline.cc
   DEPENDS
   MLIRConversionPassIncGen
+  MLIRTorchExtPassIncGen
   LINK_LIBS
   PUBLIC
   TorchExtToGPU

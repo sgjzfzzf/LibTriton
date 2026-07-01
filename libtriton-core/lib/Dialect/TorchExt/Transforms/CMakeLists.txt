@@ -1,10 +1,14 @@
 add_mlir_library(
   BackendTypeConversion
   BackendTypeConversion.cc
+  RAAI.cc
+  DEPENDS
+  MLIRTorchExtPassIncGen
   LINK_LIBS
   PUBLIC
   MLIRLLVMCommonConversion
   MLIRLLVMDialect
   MLIRPass
+  TorchExtDialect
   TorchMLIRTorchDialect
   TorchMLIRTorchUtils)

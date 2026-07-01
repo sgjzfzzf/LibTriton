@@ -9,6 +9,7 @@
 #include "libtriton-core/Conversion/TorchToLLVM/TorchToLLVM.h"
 #include "libtriton-core/Dialect/TVMFFI/IR/TVMFFIDialect.h"
 #include "libtriton-core/Dialect/TorchExt/IR/TorchExtDialect.h"
+#include "libtriton-core/Dialect/TorchExt/Transforms/RAAI.h"
 #include "mlir/Conversion/ConvertToLLVM/ToLLVMPass.h"
 #include "mlir/Conversion/Passes.h"
 #include "mlir/InitAllDialects.h"
@@ -23,6 +24,7 @@ void libtriton::conversion::registerAllPasses() {
   mlir::registerAllPasses();
   mlir::registerConvertToLLVMPass();
   mlir::registerReconcileUnrealizedCastsPass();
+  libtriton::torch::registerRAAIPass();
   libtriton::torchext::registerConvertTorchExtToGPUPass();
   libtriton::torchext::registerConvertTorchExtToLLVMPass();
   libtriton::tvm_ffi::registerConvertTVMFFIToLLVMPass();

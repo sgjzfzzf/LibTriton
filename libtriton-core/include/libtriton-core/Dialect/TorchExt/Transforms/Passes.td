@@ -3,18 +3,18 @@
 
 include "mlir/Pass/PassBase.td"
 
-def RewriteTorchAsTorchExt
-    : Pass<"rewrite-torch-as-torchext", "mlir::ModuleOp"> {
-  let summary = "Rewrite Torch dialect aten ops as TorchExt dispatcher calls";
+def RAAI : Pass<"raai", "mlir::func::FuncOp"> {
+  let summary = "Release allocated intermediate variables in single-region ops";
   // clang-format off
   let description = [{
-    Rewrites Torch dialect ops whose names start with
-    "torch.aten."(e.g. torch.aten.empty_like) into TorchExt
-    torchext.call_dispatcher ops.  The  "aten."  prefix becomes
-    "aten::" as the dispatcher op_name; the overload_name is left empty.
+    Tracks allocations (torch.prim.ListConstruct and torch.aten.* ops)
+    inside func::FuncOp regions and inserts torchext.ObjectDecRef for all
+    tracked values at every return point. Values that are returned (yielded)
+    also receive a torchext.ObjectIncRef to transfer ownership to the caller.
   }];
   // clang-format on
-  let dependentDialects = ["libtriton::torchext::TorchExtDialect"];
+  let dependentDialects =
+      ["mlir::func::FuncDialect", "libtriton::torchext::TorchExtDialect"];
 }
 
 #endif // LIBTRITON_CORE_DIALECT_TORCHEXT_TRANSFORMS_PASSES_TD_

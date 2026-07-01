@@ -14,9 +14,11 @@
 #include "libtriton-core/Conversion/TorchToLLVM/FuncBackendTypeConversion.h"
 #include "libtriton-core/Conversion/TorchToLLVM/TorchToLLVM.h"
 #include "libtriton-core/Dialect/TorchExt/IR/TorchExtDialect.h"
+#include "libtriton-core/Dialect/TorchExt/Transforms/RAAI.h"
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Conversion/Passes.h"
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
@@ -36,6 +38,7 @@ class TorchToLLVMPipelinePass
 public:
   void runOnOperation() final {
     mlir::OpPassManager pm;
+    pm.addNestedPass<mlir::func::FuncOp>(libtriton::torch::createRAAI());
     pm.addPass(libtriton::torch::createConvertTorchToCf());
     pm.addPass(mlir::createConvertIndexToLLVMPass());
     pm.addPass(libtriton::torch::createConvertTorchToLLVM());

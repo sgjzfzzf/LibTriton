@@ -1,8 +1,11 @@
 add_mlir_library(
   LibTritonUtilsRegistration
   Registration.cc
+  DEPENDS
+  MLIRTorchExtPassIncGen
   LINK_LIBS
   PUBLIC
+  BackendTypeConversion
   TorchExtToGPU
   TorchExtToLLVM
   MLIRRegisterAllDialects

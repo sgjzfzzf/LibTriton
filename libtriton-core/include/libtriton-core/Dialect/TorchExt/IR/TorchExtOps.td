@@ -65,9 +65,28 @@ def TorchExt_TritonKernelLaunchOp : TorchExt_Op<"triton_kernel_launch", [
 }
 
 //===----------------------------------------------------------------------===//
-// Object reference counting — decref for Torch types backed by
+// Object reference counting — inc/dec for Torch types backed by
 // manually-managed resources.
 //===----------------------------------------------------------------------===//
+
+def TorchExt_ObjectIncRefOp : TorchExt_Op<"ObjectIncRef"> {
+  let summary = "Increase the reference count of a Torch object";
+  // clang-format off
+  let description = [{
+    Increases the reference count of the Torch object referenced by the value.
+    This is used to transfer ownership of an object (e.g. when returning a
+    value from a function, the caller receives an additional reference).
+
+    Corresponds to:
+      TVMFFIObjectIncRef(handle)
+  }];
+  // clang-format on
+
+  let arguments = (ins AnyTorchType : $object);
+  let results = (outs);
+
+  let assemblyFormat = "$object attr-dict `:` type($object)";
+}
 
 def TorchExt_ObjectDecRefOp : TorchExt_Op<"ObjectDecRef"> {
   let summary = "Decrease the reference count of a Torch object";

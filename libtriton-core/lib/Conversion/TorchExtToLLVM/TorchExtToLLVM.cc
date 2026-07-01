@@ -18,6 +18,41 @@ namespace libtriton::torchext {
 
 namespace {
 
+/// Converts torchext.aoti.ObjectIncRef to TVMFFIObjectIncRef() LLVM call.
+class ConvertObjectIncRefOp : public mlir::OpConversionPattern<ObjectIncRefOp> {
+public:
+  using OpConversionPattern::OpConversionPattern;
+
+  mlir::LogicalResult
+  matchAndRewrite(ObjectIncRefOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const override {
+    mlir::Location loc = op.getLoc();
+    mlir::MLIRContext *ctx = op.getContext();
+
+    mlir::ModuleOp moduleOp = op->getParentOfType<mlir::ModuleOp>();
+    if (!moduleOp) {
+      return op.emitError("op is not inside a module");
+    }
+
+    mlir::FailureOr<mlir::LLVM::LLVMFuncOp> calleeOrErr =
+        libtriton::conversion::utils::getOrCreateTVMFFIObjectIncRef(moduleOp);
+    if (mlir::failed(calleeOrErr)) {
+      return mlir::failure();
+    }
+
+    // The adapted object is a TVMFFIAny — extract the pointer from field[2].
+    mlir::Value anyVal = adaptor.getObject();
+    mlir::Value payloadI64 = mlir::LLVM::ExtractValueOp::create(
+        rewriter, loc, anyVal, llvm::ArrayRef<int64_t>{2});
+    mlir::Value handle = mlir::LLVM::IntToPtrOp::create(
+        rewriter, loc, mlir::LLVM::LLVMPointerType::get(ctx), payloadI64);
+    mlir::LLVM::CallOp::create(rewriter, loc, *calleeOrErr,
+                               mlir::ValueRange{handle});
+    rewriter.eraseOp(op);
+    return mlir::success();
+  }
+};
+
 /// Converts torchext.aoti.ObjectDecRef to TVMFFIObjectDecRef() LLVM call.
 class ConvertObjectDecRefOp : public mlir::OpConversionPattern<ObjectDecRefOp> {
 public:
@@ -91,8 +126,10 @@ struct TorchExtToLLVMDialectInterface
 void populateTorchExtToLLVMConversionPatterns(
     mlir::ConversionTarget &target, mlir::LLVMTypeConverter &typeConverter,
     mlir::RewritePatternSet &patterns) {
-  patterns.add<ConvertObjectDecRefOp>(typeConverter, patterns.getContext());
-  target.addIllegalOp<libtriton::torchext::ObjectDecRefOp>();
+  patterns.add<ConvertObjectIncRefOp, ConvertObjectDecRefOp>(
+      typeConverter, patterns.getContext());
+  target.addIllegalOp<libtriton::torchext::ObjectIncRefOp,
+                      libtriton::torchext::ObjectDecRefOp>();
   target.addLegalDialect<mlir::BuiltinDialect, mlir::LLVM::LLVMDialect>();
 }
 
