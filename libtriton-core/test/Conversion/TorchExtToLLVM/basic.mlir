@@ -5,16 +5,16 @@
 
 // CHECK-DAG:   llvm.func @TVMFFIObjectDecRef(!llvm.ptr) -> i32
 
-// CHECK-LABEL: llvm.func @list_delete_list(
-// CHECK-SAME:    %[[LIST:.*]]: !llvm.struct<(i32, i32, i64)>) {
-// CHECK-NEXT:    llvm.extractvalue %[[LIST]][2] : !llvm.struct<(i32, i32, i64)>
+// CHECK-LABEL: llvm.func @object_dec_ref(
+// CHECK-SAME:    %[[OBJ:.*]]: !llvm.struct<(i32, i32, i64)>) {
+// CHECK-NEXT:    llvm.extractvalue %[[OBJ]][2] : !llvm.struct<(i32, i32, i64)>
 // CHECK:         llvm.inttoptr {{%.*}} : i64 to !llvm.ptr
 // CHECK:         llvm.call @TVMFFIObjectDecRef({{%.*}}) : (!llvm.ptr) -> i32
 // CHECK-NEXT:    llvm.return
 
 module {
-func.func @list_delete_list(%list: !torch.list<int>) {
-  torchext.aoti.ListDeleteList %list : !torch.list<int>
+func.func @object_dec_ref(%object: !torch.list<int>) {
+  torchext.ObjectDecRef %object : !torch.list<int>
   return
 }
 }

@@ -462,8 +462,7 @@ mlir::FailureOr<mlir::Value> resolveStableIValue(mlir::OpBuilder &builder,
     mlir::Block *noneBlock = builder.createBlock(continuationBlock);
     mlir::Block *someBlock = builder.createBlock(continuationBlock);
 
-    mlir::Value zero =
-        mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, 0);
+    mlir::Value zero = mlir::LLVM::ConstantOp::create(builder, loc, i64Ty, 0);
     mlir::Value isNone = mlir::LLVM::ICmpOp::create(
         builder, loc, mlir::LLVM::ICmpPredicate::eq, loaded, zero);
 
@@ -472,8 +471,7 @@ mlir::FailureOr<mlir::Value> resolveStableIValue(mlir::OpBuilder &builder,
 
     // --- None block: TVMFFIAny {kTVMFFINone, 0, 0} ---
     builder.setInsertionPointToStart(noneBlock);
-    mlir::Value noneResult =
-        buildFFIAnyValue(builder, loc, kTVMFFINone, zero);
+    mlir::Value noneResult = buildFFIAnyValue(builder, loc, kTVMFFINone, zero);
     mlir::LLVM::BrOp::create(builder, loc, mlir::ValueRange{noneResult},
                              continuationBlock);
 
@@ -548,14 +546,13 @@ mlir::FailureOr<mlir::Value> resolveStableIValue(mlir::OpBuilder &builder,
     if (mlir::failed(sizeFn)) {
       return mlir::failure();
     }
-    mlir::LLVM::CallOp::create(builder, loc, *sizeFn,
-                               {listHandle, sizeSlot});
+    mlir::LLVM::CallOp::create(builder, loc, *sizeFn, {listHandle, sizeSlot});
     mlir::Value listSize =
         mlir::LLVM::LoadOp::create(builder, loc, i64Ty, sizeSlot);
 
     // --- Step 2: Allocate ffi.Array args region (runtime size) ---
-    mlir::Value ffiArgs = mlir::LLVM::AllocaOp::create(
-        builder, loc, ptrTy, anyTy, listSize);
+    mlir::Value ffiArgs =
+        mlir::LLVM::AllocaOp::create(builder, loc, ptrTy, anyTy, listSize);
 
     // --- Step 3: Loop i = 0 .. listSize-1, torch_list_get_item + resolve ---
     mlir::Block *origBlock = builder.getBlock();
@@ -642,8 +639,7 @@ mlir::FailureOr<mlir::Value> resolveStableIValue(mlir::OpBuilder &builder,
     mlir::Value vObjGEP =
         mlir::LLVM::GEPOp::create(builder, loc, ptrTy, anyTy, *ffiResult,
                                   llvm::ArrayRef<mlir::LLVM::GEPArg>{0, 2});
-    mlir::Value vObj =
-        mlir::LLVM::LoadOp::create(builder, loc, i64Ty, vObjGEP);
+    mlir::Value vObj = mlir::LLVM::LoadOp::create(builder, loc, i64Ty, vObjGEP);
 
     mlir::LLVM::BrOp::create(builder, loc, continuationBlock);
 

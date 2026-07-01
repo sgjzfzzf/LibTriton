@@ -18,14 +18,13 @@ namespace libtriton::torchext {
 
 namespace {
 
-/// Converts torchext.aoti.ListDeleteList to TVMFFIObjectDecRef() LLVM call.
-class ConvertListDeleteListOp
-    : public mlir::OpConversionPattern<ListDeleteListOp> {
+/// Converts torchext.aoti.ObjectDecRef to TVMFFIObjectDecRef() LLVM call.
+class ConvertObjectDecRefOp : public mlir::OpConversionPattern<ObjectDecRefOp> {
 public:
   using OpConversionPattern::OpConversionPattern;
 
   mlir::LogicalResult
-  matchAndRewrite(ListDeleteListOp op, OpAdaptor adaptor,
+  matchAndRewrite(ObjectDecRefOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const override {
     mlir::Location loc = op.getLoc();
     mlir::MLIRContext *ctx = op.getContext();
@@ -41,8 +40,8 @@ public:
       return mlir::failure();
     }
 
-    // The adapted list is a TVMFFIAny — extract the pointer from field[2].
-    mlir::Value anyVal = adaptor.getList();
+    // The adapted object is a TVMFFIAny — extract the pointer from field[2].
+    mlir::Value anyVal = adaptor.getObject();
     mlir::Value payloadI64 = mlir::LLVM::ExtractValueOp::create(
         rewriter, loc, anyVal, llvm::ArrayRef<int64_t>{2});
     mlir::Value handle = mlir::LLVM::IntToPtrOp::create(
@@ -92,8 +91,8 @@ struct TorchExtToLLVMDialectInterface
 void populateTorchExtToLLVMConversionPatterns(
     mlir::ConversionTarget &target, mlir::LLVMTypeConverter &typeConverter,
     mlir::RewritePatternSet &patterns) {
-  patterns.add<ConvertListDeleteListOp>(typeConverter, patterns.getContext());
-  target.addIllegalOp<libtriton::torchext::ListDeleteListOp>();
+  patterns.add<ConvertObjectDecRefOp>(typeConverter, patterns.getContext());
+  target.addIllegalOp<libtriton::torchext::ObjectDecRefOp>();
   target.addLegalDialect<mlir::BuiltinDialect, mlir::LLVM::LLVMDialect>();
 }
 

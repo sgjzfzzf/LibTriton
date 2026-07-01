@@ -65,24 +65,29 @@ def TorchExt_TritonKernelLaunchOp : TorchExt_Op<"triton_kernel_launch", [
 }
 
 //===----------------------------------------------------------------------===//
-// Stable list operations — map 1:1 to torch/csrc/stable/c/shim.h
+// Object reference counting — decref for Torch types backed by
+// manually-managed resources.
 //===----------------------------------------------------------------------===//
 
-def TorchExt_ListDeleteListOp : TorchExt_Op<"aoti.ListDeleteList"> {
-  let summary = "Delete a StableList via torch_delete_list()";
+def TorchExt_ObjectDecRefOp : TorchExt_Op<"ObjectDecRef"> {
+  let summary = "Decrease the reference count of a Torch object";
   // clang-format off
   let description = [{
-    Deletes the underlying StableList referenced by the handle.
+    Decreases the reference count of the Torch object referenced by the value.
+    When the count reaches zero the underlying resource is released.
 
     Corresponds to:
-      torch_delete_list(list_handle)
+      TVMFFIObjectDecRef(handle)
+
+    This is the general-purpose op for any Torch type backed by a
+    manually-managed resource (list, tensor, string, etc.).
   }];
   // clang-format on
 
-  let arguments = (ins AnyTorchListType : $list);
+  let arguments = (ins AnyTorchType : $object);
   let results = (outs);
 
-  let assemblyFormat = "$list attr-dict `:` type($list)";
+  let assemblyFormat = "$object attr-dict `:` type($object)";
 }
 
 #endif // LIBTRITON_CORE_DIALECT_TORCHEXT_IR_TORCHEXTOPS_TD_

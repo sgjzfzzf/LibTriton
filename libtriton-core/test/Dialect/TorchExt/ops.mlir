@@ -1,8 +1,8 @@
 // RUN: libtriton-core-opt %s -split-input-file | FileCheck %s
 
-// CHECK-LABEL: func.func @list_delete_list
-func.func @list_delete_list(%list: !torch.list<int>) {
-  // CHECK: torchext.aoti.ListDeleteList %[[LIST:.*]] : <int>
-  torchext.aoti.ListDeleteList %list : !torch.list<int>
+// CHECK-LABEL: func.func @object_dec_ref
+func.func @object_dec_ref(%object: !torch.list<int>) {
+  // CHECK: torchext.ObjectDecRef %[[OBJ:.*]] : !torch.list<int>
+  torchext.ObjectDecRef %object : !torch.list<int>
   return
 }

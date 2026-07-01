@@ -316,7 +316,7 @@ public:
 
     // Extract v_obj (field[2]) from result TVMFFIAny and wrap it back
     // in a TVMFFIAny with kTVMFFIArray tag so downstream consumers
-    // (SchemaLookup for aten ops, ConvertListDeleteListOp, etc.) always
+    // (SchemaLookup for aten ops, ConvertObjectDecRefOp, etc.) always
     // see a proper TVMFFIAny value instead of a raw pointer that would
     // force an unreconcilable unrealized_conversion_cast.
     mlir::Value resultSlot = *result;
