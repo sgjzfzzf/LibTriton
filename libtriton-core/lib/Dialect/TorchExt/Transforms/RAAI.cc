@@ -8,8 +8,8 @@
 
 #include "libtriton-core/Dialect/TorchExt/IR/TorchExtDialect.h"
 #include "libtriton-core/Dialect/TorchExt/IR/TorchExtOps.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Block.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 #include "torch-mlir/Dialect/Torch/IR/TorchOps.h"
 
@@ -24,53 +24,54 @@ namespace {
 class RAAIPass : public impl::RAAIBase<RAAIPass> {
 public:
   void runOnOperation() final {
-    mlir::Region &body = getOperation().getBody();
-    // Only handle single-block regions to keep the analysis simple.
-    if (!body.hasOneBlock()) {
-      return;
-    }
-    mlir::Block &block = body.front();
-
-    // --- Collect allocated values ---
-    llvm::SmallVector<mlir::Value> allocatedVals;
-    block.walk([&](mlir::Operation *op) {
-      // torch.prim.ListConstruct → List allocation
-      if (mlir::torch::Torch::PrimListConstructOp listCtor =
-              llvm::dyn_cast<mlir::torch::Torch::PrimListConstructOp>(op)) {
-        allocatedVals.push_back(listCtor.getResult());
+    getOperation().walk([&](mlir::Operation *op) {
+      // Skip the module itself — its body is not a meaningful scope
+      // for per-block reference counting.
+      if (llvm::isa<mlir::ModuleOp>(op)) {
+        return;
       }
-      // torch.aten.* → Tensor/list allocation (only tensor/list-typed results)
-      else if (mlir::OperationName opName = op->getName();
-               opName.getDialectNamespace() == "torch" &&
-               opName.getStringRef().starts_with("torch.aten.")) {
-        for (mlir::Value result :
-             llvm::make_filter_range(op->getResults(), [](mlir::Value val) {
-               return llvm::isa<mlir::torch::Torch::ValueTensorType,
-                                mlir::torch::Torch::NonValueTensorType,
-                                mlir::torch::Torch::ListType>(val.getType());
-             })) {
-          allocatedVals.push_back(result);
+      for (mlir::Region &region : op->getRegions()) {
+        if (!region.hasOneBlock()) {
+          continue;
+        }
+        mlir::Block &block = region.front();
+
+        // --- Collect allocated values ---
+        llvm::SmallVector<mlir::Value> allocatedVals;
+        block.walk([&](mlir::Operation *op) {
+          if (mlir::torch::Torch::PrimListConstructOp listCtor =
+                  llvm::dyn_cast<mlir::torch::Torch::PrimListConstructOp>(op)) {
+            allocatedVals.push_back(listCtor.getResult());
+          } else if (mlir::OperationName opName = op->getName();
+                     opName.getDialectNamespace() == "torch" &&
+                     opName.getStringRef().starts_with("torch.aten.")) {
+            for (mlir::Value result :
+                 llvm::make_filter_range(op->getResults(), [](mlir::Value val) {
+                   return llvm::isa<mlir::torch::Torch::ValueTensorType,
+                                    mlir::torch::Torch::NonValueTensorType,
+                                    mlir::torch::Torch::ListType>(
+                       val.getType());
+                 })) {
+              allocatedVals.push_back(result);
+            }
+          }
+        });
+
+        // --- Insert ref-count ops before the terminator ---
+        mlir::Operation *terminator = block.getTerminator();
+        mlir::OpBuilder builder(terminator);
+        mlir::Location loc = terminator->getLoc();
+        mlir::ValueRange yieldedVals = terminator->getOperands();
+
+        for (mlir::Value val : yieldedVals) {
+          libtriton::torchext::ObjectIncRefOp::create(builder, loc, val);
+        }
+
+        for (mlir::Value val : allocatedVals) {
+          libtriton::torchext::ObjectDecRefOp::create(builder, loc, val);
         }
       }
     });
-
-    // --- Insert ref-count ops before the terminator ---
-    mlir::Operation *terminator = block.getTerminator();
-    mlir::OpBuilder builder(terminator);
-    mlir::Location loc = terminator->getLoc();
-
-    // Values yielded (returned) from this block are the terminator's operands.
-    mlir::ValueRange yieldedVals = terminator->getOperands();
-
-    // --- IncRef for every yielded value (allocated or external arg) ---
-    for (mlir::Value val : yieldedVals) {
-      libtriton::torchext::ObjectIncRefOp::create(builder, loc, val);
-    }
-
-    // --- DecRef for every internally-allocated value ---
-    for (mlir::Value val : allocatedVals) {
-      libtriton::torchext::ObjectDecRefOp::create(builder, loc, val);
-    }
   }
 };
 

@@ -3,18 +3,17 @@
 
 include "mlir/Pass/PassBase.td"
 
-def RAAI : Pass<"raai", "mlir::func::FuncOp"> {
-  let summary = "Release allocated intermediate variables in single-region ops";
+def RAAI : Pass<"raai", "mlir::ModuleOp"> {
+  let summary = "Release allocated intermediate variables in single-block regions";
   // clang-format off
   let description = [{
-    Tracks allocations (torch.prim.ListConstruct and torch.aten.* ops)
-    inside func::FuncOp regions and inserts torchext.ObjectDecRef for all
-    tracked values at every return point. Values that are returned (yielded)
-    also receive a torchext.ObjectIncRef to transfer ownership to the caller.
+    Walks every op in the module.  For each single-block region (func::FuncOp,
+    scf.if / scf.for bodies, etc.) it inserts torchext.ObjectIncRef for every
+    yielded value and torchext.ObjectDecRef for every internally-allocated
+    value (torch.prim.ListConstruct and torch.aten.* tensor/list results).
   }];
   // clang-format on
-  let dependentDialects =
-      ["mlir::func::FuncDialect", "libtriton::torchext::TorchExtDialect"];
+  let dependentDialects = ["libtriton::torchext::TorchExtDialect"];
 }
 
 #endif // LIBTRITON_CORE_DIALECT_TORCHEXT_TRANSFORMS_PASSES_TD_

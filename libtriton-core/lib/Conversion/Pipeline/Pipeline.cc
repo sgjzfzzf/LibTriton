@@ -38,7 +38,7 @@ class TorchToLLVMPipelinePass
 public:
   void runOnOperation() final {
     mlir::OpPassManager pm;
-    pm.addNestedPass<mlir::func::FuncOp>(libtriton::torch::createRAAI());
+    pm.addPass(libtriton::torch::createRAAI());
     pm.addPass(libtriton::torch::createConvertTorchToCf());
     pm.addPass(mlir::createConvertIndexToLLVMPass());
     pm.addPass(libtriton::torch::createConvertTorchToLLVM());
