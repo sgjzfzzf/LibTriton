@@ -28,8 +28,6 @@ void populateTorchExtToGPUConversionPatterns(
     mlir::TypeConverter &typeConverter);
 
 void registerConvertTorchExtToGPUPass();
-void registerConvertTorchExtToGPUInterface(mlir::DialectRegistry &registry);
-
 } // namespace libtriton::torchext
 
 #endif // LIBTRITON_CORE_CONVERSION_TORCHEXTTOGPU_TORCHEXTTOGPU_H_

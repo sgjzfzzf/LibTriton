@@ -13,7 +13,6 @@
 #include "libtriton-core/Dialect/TorchExt/IR/TorchExtOps.h"
 #include "libtriton-core/Dialect/TorchExt/Transforms/BackendTypeConversion.h"
 
-#include "mlir/Conversion/ConvertToLLVM/ToLLVMInterface.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -199,17 +198,6 @@ public:
   }
 };
 
-struct TorchExtToGPUDialectInterface
-    : public mlir::ConvertToLLVMPatternInterface {
-  using ConvertToLLVMPatternInterface::ConvertToLLVMPatternInterface;
-
-  void populateConvertToLLVMConversionPatterns(
-      mlir::ConversionTarget &target, mlir::LLVMTypeConverter &typeConverter,
-      mlir::RewritePatternSet &patterns) const final {
-    populateTorchExtToGPUConversionPatterns(target, patterns, typeConverter);
-  }
-};
-
 } // namespace
 
 void populateTorchExtToGPUConversionPatterns(
@@ -217,13 +205,6 @@ void populateTorchExtToGPUConversionPatterns(
     mlir::TypeConverter &typeConverter) {
   patterns.add<ConvertTritonKernelLaunchOp>(typeConverter,
                                             patterns.getContext());
-}
-
-void registerConvertTorchExtToGPUInterface(mlir::DialectRegistry &registry) {
-  registry.addExtension(
-      +[](mlir::MLIRContext *, libtriton::torchext::TorchExtDialect *dialect) {
-        dialect->addInterfaces<TorchExtToGPUDialectInterface>();
-      });
 }
 
 } // namespace libtriton::torchext

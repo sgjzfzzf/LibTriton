@@ -41,7 +41,6 @@ void libtriton::conversion::registerAllDialects(
                   mlir::torch::Torch::TorchDialect,
                   mlir::torch::TorchConversion::TorchConversionDialect>();
   mlir::registerAllExtensions(registry);
-  libtriton::torchext::registerConvertTorchExtToGPUInterface(registry);
   libtriton::torchext::registerConvertTorchExtToLLVMInterface(registry);
   libtriton::tvm_ffi::registerConvertTVMFFIToLLVMInterface(registry);
   libtriton::torch::registerConvertTorchToLLVMInterface(registry);
