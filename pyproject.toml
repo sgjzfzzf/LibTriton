@@ -1,6 +1,10 @@
 [project]
 name = "libtriton"
 version = "0.1.0"
+authors = [
+    { name = "Jinjie Liu", email = "sgjzfzzf@gmail.com" },
+]
+license = { text = "MIT" }
 # Lock triton to 3.6.0 because version 3.7 changed the cache calculation API,
 # causing errors when re-finding the cache.
 # Require torch >= 2.10.0 for the stable C API.
