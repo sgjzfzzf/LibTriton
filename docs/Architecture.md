@@ -1,4 +1,4 @@
-# LibTriton Architecture
+# Trident Architecture
 
 This document describes the core workflows in the current repository:
 
@@ -10,13 +10,13 @@ This document describes the core workflows in the current repository:
 - Top-level CMake project
   - Dependencies are orchestrated via `ExternalProject` in the root `CMakeLists.txt`:
     - `llvm-project` (with MLIR + Python bindings enabled)
-    - `libtriton-core` (the core C++/MLIR implementation in this repo)
-- libtriton-core
+    - `trident-core` (the core C++/MLIR implementation in this repo)
+- trident-core
   - Implements and exports Dialects/Passes/Runtime/Python bindings.
   - Depends on torch-mlir, MLIR, LLVM, CUDAToolkit, Torch, and tvm_ffi.
-- Python package libtriton
+- Python package trident
   - User-facing entry points: `jit` and `compile`.
-  - Core backend object: `LibTritonGraphModule`.
+  - Core backend object: `TridentGraphModule`.
   - Handles graph export/import, guard specialization, compilation, and execution dispatch.
 
 ## 2. Build Workflow
@@ -26,30 +26,30 @@ flowchart TD
   A[uv pip install -e . or uv build] --> B[scikit-build-core]
   B --> C[root CMakeLists]
   C --> D[ExternalProject: llvm-project]
-  C --> E[ExternalProject: libtriton-core]
+  C --> E[ExternalProject: trident-core]
   D --> F[install LLVM/MLIR to build/install/llvm-project]
   F --> E
-  E --> G[build and install libtriton-core to build/install/libtriton-core]
-  G --> H[install Python extension into libtriton/_C]
+  E --> G[build and install trident-core to build/install/trident-core]
+  G --> H[install Python extension into trident/_C]
 ```
 
 Build highlights:
 
 - `pyproject.toml` uses `scikit-build-core` as the build backend.
 - Build steps fetch and compile `llvm-project` and `torch-mlir`; first builds can take a long time.
-- `wheel.install-dir` is configured as `libtriton/_C`, so Python can import the C++/MLIR bindings directly.
+- `wheel.install-dir` is configured as `trident/_C`, so Python can import the C++/MLIR bindings directly.
 
 ## 3. Runtime Compilation Workflow
 
-Users typically decorate Python functions with `@libtriton.jit`. The call path is:
+Users typically decorate Python functions with `@trident.jit`. The call path is:
 
 ```mermaid
 flowchart TD
-  A["user calls jitted function"] --> B["LibTritonGraphModule.__call__"]
+  A["user calls jitted function"] --> B["TridentGraphModule.__call__"]
   B --> C{"existing matching specialization?"}
   C -- "no" --> D["compile(*args)"]
   D --> E["torch._dynamo.export builds FX graph and guards"]
-  E --> F["LibTritonFxImporter imports FX into MLIR"]
+  E --> F["TridentFxImporter imports FX into MLIR"]
   F --> G["create tvm_ffi.func wrapper and attach arg_attrs guards"]
   G --> H["store sub-module"]
   H --> I["stub_compile rebuilds executor"]
@@ -80,18 +80,18 @@ When runtime inputs change and guards no longer match:
 
 ## 5. FX Import And Triton Kernel Handling
 
-During FX import, `LibTritonGraphNodeImporter` applies custom handling for Triton higher-order ops:
+During FX import, `TridentGraphNodeImporter` applies custom handling for Triton higher-order ops:
 
 - Retrieves compiled kernels and runtime parameters from Triton JIT/Autotune results.
 - Materializes cubin into `gpu.binary` (GPU object) attached to the module.
-- Emits `torchext.TritonKernelLaunchOp` to launch kernels.
+- Emits `torchext.TridentKernelLaunchOp` to launch kernels.
 - For autotune paths, computes/selects launch grids based on `best_config`.
 
 This integrates Triton kernel launches into the MLIR workflow, rather than leaving them as Python-level scheduling only.
 
 ## 6. LLVM Dispatcher Semantics
 
-After lowering to LLVM, `LibTritonGraphModule` generates one unified entry point:
+After lowering to LLVM, `TridentGraphModule` generates one unified entry point:
 
 - ABI signature: `i32 (ptr, ptr, i32, ptr)`
 - Calls `__tvm_ffi_<fn>_<i>` in order

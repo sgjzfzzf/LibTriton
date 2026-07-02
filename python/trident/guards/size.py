@@ -1,0 +1,42 @@
+from __future__ import annotations
+
+import re
+from typing import Any, Final, Optional
+from typing_extensions import override
+
+from trident._C.trident_core import ir
+
+from .guard import Guard
+
+
+class SizeGuard(Guard):
+    _regex_pattern: re.Pattern = re.compile(
+        rf"{Guard._regex_variable}\.size\(\)\[{Guard._regex_int}\] == {Guard._regex_int}"
+    )
+
+    def __init__(
+        self, variable: str, index: int, expected: int, *args: Any, **kwargs: Any
+    ) -> None:
+        super().__init__(variable, *args, **kwargs)
+        self.index: Final[int] = index
+        self.expected: Final[int] = expected
+
+    @override
+    def __hash__(self) -> int:
+        return super().__hash__() ^ hash((self.variable, self.index, self.expected))
+
+    @classmethod
+    @override
+    def _parse(cls, code: str) -> Optional[SizeGuard]:
+        if match := cls._regex_pattern.match(code):
+            variable, index, expected = match.groups()
+            return SizeGuard(variable, int(index), int(expected))
+        else:
+            return None
+
+    @override
+    def to_attribute(self, context: ir.Context) -> Optional[ir.Attribute]:
+        return ir.Attribute.parse(
+            f"#tvm_ffi.SizeGuard<index = {self.index}, expected = {self.expected}>",
+            context=context,
+        )

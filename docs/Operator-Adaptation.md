@@ -1,6 +1,6 @@
 # Operator Adaptation Guide
 
-This guide explains how to adapt a new operator in LibTriton, including:
+This guide explains how to adapt a new operator in Trident, including:
 
 - What to implement.
 - How to validate the implementation.
@@ -11,11 +11,11 @@ This guide explains how to adapt a new operator in LibTriton, including:
 In this repository, there are two common adaptation paths.
 
 1. Conversion pipeline path (recommended first for a new ATen op)
-- You add/update MLIR test inputs under `libtriton-core/test/Conversion/Pipeline`.
+- You add/update MLIR test inputs under `trident-core/test/Conversion/Pipeline`.
 - You verify that `torch-to-llvm-pipeline` lowers correctly.
 - You add a Python end-to-end unittest in `test/` using `AtenOpTest`.
 
-2. Python frontend path (`@libtriton.jit` dynamic compile)
+2. Python frontend path (`@trident.jit` dynamic compile)
 - You ensure your op appears correctly in exported FX graph.
 - You verify FX import and runtime specialization behavior.
 - You validate dispatcher behavior across multiple guard specializations.
@@ -25,10 +25,10 @@ For a new operator bring-up, start with path 1, then validate path 2 if needed.
 ## 2. Minimal Bring-Up Checklist (Path 1)
 
 1. Add a pipeline test MLIR file
-- Create `libtriton-core/test/Conversion/Pipeline/<op>.mlir`.
+- Create `trident-core/test/Conversion/Pipeline/<op>.mlir`.
 - Include one `func.func` using your target op.
 - Include one `tvm_ffi.func` wrapper exposing a callable symbol `<op>`.
-- Add `// RUN: libtriton-core-opt %s --torch-to-llvm-pipeline | FileCheck %s`.
+- Add `// RUN: trident-core-opt %s --torch-to-llvm-pipeline | FileCheck %s`.
 - Add focused `FileCheck` assertions for key lowering points.
 
 2. Match wrapper symbol with Python test expectations
@@ -48,14 +48,14 @@ For a new operator bring-up, start with path 1, then validate path 2 if needed.
 
 ## 3. Optional Bring-Up Checklist (Path 2)
 
-Use this when the op is exercised through Python functions decorated by `@libtriton.jit`.
+Use this when the op is exercised through Python functions decorated by `@trident.jit`.
 
 1. Export path sanity
 - Confirm `torch._dynamo.export(...)` can capture your function.
 - Confirm guards are produced as expected for dynamic shapes/dtypes/devices.
 
 2. FX import sanity
-- Ensure `LibTritonFxImporter` and node import logic can represent the op.
+- Ensure `TridentFxImporter` and node import logic can represent the op.
 - If Triton higher-order ops are involved, confirm kernel metadata/runtime args are materialized correctly.
 
 3. Runtime specialization sanity
@@ -73,7 +73,7 @@ Suspect:
 - Lowering or symbol merge stage removed/renamed your symbol unexpectedly.
 
 Check:
-- `libtriton-core/test/Conversion/Pipeline/<op>.mlir`
+- `trident-core/test/Conversion/Pipeline/<op>.mlir`
 - `test/base.py` symbol construction logic
 
 ### B. Pipeline fails before LLVM lowering
@@ -84,8 +84,8 @@ Suspect:
 - Invalid MLIR syntax or wrong op signature in your `.mlir` file.
 
 Check:
-- `libtriton-core/test/Conversion/Pipeline/<op>.mlir`
-- `libtriton-core` dialect/pass implementation touched by your op
+- `trident-core/test/Conversion/Pipeline/<op>.mlir`
+- `trident-core` dialect/pass implementation touched by your op
 
 ### C. Wrapper call succeeds but output shape/dtype is wrong
 
@@ -110,7 +110,7 @@ Check:
 - Lowered code patterns asserted by `FileCheck`
 - Runtime conversion calls in generated LLVM IR path
 
-### E. `@libtriton.jit` path recompiles too often or never stabilizes
+### E. `@trident.jit` path recompiles too often or never stabilizes
 
 Suspect:
 - Guard generation too strict or mismatched with actual call patterns.
@@ -118,9 +118,9 @@ Suspect:
 - Dispatcher guard-miss recognition path not classifying errors correctly.
 
 Check:
-- Guard parsing and attr generation in `python/libtriton/guards/`
-- Specialization/dispatcher flow in `python/libtriton/backend.py`
-- Error registration for `GuardMatchException` in `python/libtriton/error.py`
+- Guard parsing and attr generation in `python/trident/guards/`
+- Specialization/dispatcher flow in `python/trident/backend.py`
+- Error registration for `GuardMatchException` in `python/trident/error.py`
 
 ### F. First call works, second call fails with different input
 
@@ -130,7 +130,7 @@ Suspect:
 - Specialization order-dependent behavior in dispatcher.
 
 Check:
-- Combined module build and merge path in `LibTritonGraphModule`
+- Combined module build and merge path in `TridentGraphModule`
 - Dispatcher branch ordering and return/error handling
 
 ## 5. Practical Debug Strategy
@@ -138,10 +138,10 @@ Check:
 1. Start from smallest reproducible input.
 2. Verify pipeline-only behavior with `<op>.mlir` + `FileCheck` first.
 3. Verify end-to-end unittest with `AtenOpTest`.
-4. Only then debug `@libtriton.jit` dynamic specialization behavior.
+4. Only then debug `@trident.jit` dynamic specialization behavior.
 5. If failure is unclear, compare your new op with known-good patterns:
-- `libtriton-core/test/Conversion/Pipeline/empty.mlir`
-- `libtriton-core/test/Conversion/Pipeline/empty_like.mlir`
+- `trident-core/test/Conversion/Pipeline/empty.mlir`
+- `trident-core/test/Conversion/Pipeline/empty_like.mlir`
 - `test/test_empty.py`
 - `test/test_empty_like.py`
 

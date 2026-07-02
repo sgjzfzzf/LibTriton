@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.29)
 
-project(LibTriton)
+project(Trident)
 
 include(ExternalProject)
 
@@ -35,10 +35,10 @@ ExternalProject_Add(
              -DPython3_FIND_VIRTUALENV=ONLY)
 
 ExternalProject_Add(
-  libtriton-core
-  SOURCE_DIR ${CMAKE_SOURCE_DIR}/libtriton-core
-  BINARY_DIR ${CMAKE_BINARY_DIR}/libtriton-core
-  INSTALL_DIR ${CMAKE_BINARY_DIR}/install/libtriton-core
+  trident-core
+  SOURCE_DIR ${CMAKE_SOURCE_DIR}/trident-core
+  BINARY_DIR ${CMAKE_BINARY_DIR}/trident-core
+  INSTALL_DIR ${CMAKE_BINARY_DIR}/install/trident-core
   DEPENDS llvm-project
   CMAKE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
              -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
@@ -46,7 +46,7 @@ ExternalProject_Add(
              -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
              -DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}
              -DCMAKE_EXPORT_COMPILE_COMMANDS=${CMAKE_EXPORT_COMPILE_COMMANDS}
-             -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/install/libtriton-core
+             -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/install/trident-core
              -DCMAKE_LINKER_TYPE=${CMAKE_LINKER_TYPE}
              -DLLVM_DIR=${CMAKE_BINARY_DIR}/install/llvm-project/lib/cmake/llvm
              -DMLIR_DIR=${CMAKE_BINARY_DIR}/install/llvm-project/lib/cmake/mlir
@@ -59,5 +59,5 @@ ExternalProject_Add(
 
 install(
   DIRECTORY
-    ${CMAKE_BINARY_DIR}/install/libtriton-core/python_packages/libtriton-core/libtriton_core
+    ${CMAKE_BINARY_DIR}/install/trident-core/python_packages/trident-core/trident_core
   DESTINATION .)

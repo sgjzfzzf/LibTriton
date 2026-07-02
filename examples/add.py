@@ -1,4 +1,4 @@
-import libtriton
+import trident
 import torch
 import triton
 import triton.language as tl
@@ -24,7 +24,7 @@ def add_kernel(
     tl.store(output_ptr + offsets, output, mask=mask)
 
 
-@libtriton.jit
+@trident.jit
 def add_jit(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return add_impl(x, y)
 

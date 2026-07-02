@@ -13,13 +13,13 @@ from typing import Final, List
 
 import tvm_ffi
 
-from libtriton._C.libtriton_core import (
+from trident._C.trident_core import (
     capi_utils,
     execution_engine,
     ir,
     passmanager,
 )
-from libtriton._C.libtriton_core._mlir_libs._libtritonCore import (
+from trident._C.trident_core._mlir_libs._tridentCore import (
     register_all_dialects,
     register_all_passes,
 )
@@ -48,7 +48,7 @@ class AtenOpTest(unittest.TestCase):
         op: str = self.op_name()
         mlir_path: pathlib.Path = (
             pathlib.Path(__file__).resolve().parent.parent
-            / "libtriton-core"
+            / "trident-core"
             / "test"
             / "Conversion"
             / "Pipeline"

@@ -1,0 +1,22 @@
+add_mlir_library(
+  TridentUtilsRegistration
+  Registration.cc
+  DEPENDS
+  MLIRTorchExtPassIncGen
+  LINK_LIBS
+  PUBLIC
+  BackendTypeConversion
+  TorchExtToGPU
+  TorchExtToLLVM
+  MLIRRegisterAllDialects
+  MLIRRegisterAllExtensions
+  MLIRRegisterAllPasses
+  MLIRSCFDialect
+  TorchConversionToLLVM
+  TorchMLIRCAPI
+  TorchMLIRTorchConversionDialect
+  TorchPipeline
+  TorchToCf
+  TorchToLLVM
+  TVMFFIDialect
+  TVMFFIToLLVM)

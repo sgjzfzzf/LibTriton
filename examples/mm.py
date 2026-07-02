@@ -2,7 +2,7 @@ import torch
 
 import triton
 import triton.language as tl
-import libtriton
+import trident
 
 DEVICE = triton.runtime.driver.active.get_active_torch_device()
 
@@ -246,7 +246,7 @@ def matmul_triton(a, b, activation=""):
     return matmul_impl(a, b, activation)
 
 
-@libtriton.jit
+@trident.jit
 def matmul_jit(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     return matmul_impl(a, b, "")
 

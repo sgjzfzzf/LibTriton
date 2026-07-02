@@ -1,5 +1,5 @@
 [project]
-name = "libtriton"
+name = "trident"
 version = "0.1.0"
 authors = [
     { name = "Jinjie Liu", email = "sgjzfzzf@gmail.com" },
@@ -15,5 +15,5 @@ requires = ["apache-tvm-ffi", "cmake", "nanobind", "ninja", "scikit-build-core",
 build-backend = "scikit_build_core.build"
 
 [tool.scikit-build]
-wheel.install-dir = "libtriton/_C"
-wheel.packages = ["python/libtriton"]
+wheel.install-dir = "trident/_C"
+wheel.packages = ["python/trident"]

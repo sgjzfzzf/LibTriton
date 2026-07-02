@@ -1,7 +1,7 @@
 import torch
 import triton
 import triton.language as tl
-import libtriton
+import trident
 
 
 @triton.jit
@@ -35,7 +35,7 @@ def softmax(x: torch.Tensor) -> torch.Tensor:
     return softmax_triton_impl(x)
 
 
-@libtriton.jit
+@trident.jit
 def softmax_jit(x: torch.Tensor) -> torch.Tensor:
     return softmax_triton_impl(x)
 
